@@ -63,9 +63,21 @@ const frontendDistPath = path.resolve(process.cwd(), "dashboard/frontend/dist");
 const frontendIndexPath = path.join(frontendDistPath, "index.html");
 
 if (fs.existsSync(frontendIndexPath)) {
-  app.use(express.static(frontendDistPath));
+  app.use(
+    express.static(frontendDistPath, {
+      setHeaders(response, filePath) {
+        if (filePath.endsWith("index.html")) {
+          response.setHeader("Cache-Control", "no-store, no-cache, must-revalidate, proxy-revalidate");
+          return;
+        }
+
+        response.setHeader("Cache-Control", "public, max-age=31536000, immutable");
+      }
+    })
+  );
 
   app.get(/.*/, (_request, response) => {
+    response.setHeader("Cache-Control", "no-store, no-cache, must-revalidate, proxy-revalidate");
     response.sendFile(frontendIndexPath);
   });
 }

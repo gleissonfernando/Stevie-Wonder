@@ -4,12 +4,11 @@
   "description": "Steve Wonder, bot Discord modular com comandos, eventos, componentes e serviços.",
   "main": "src/index.js",
   "scripts": {
-    "start": "npm run build && tsx dashboard/backend/src/server.ts",
+    "start": "tsx dashboard/backend/src/server.ts",
     "bot": "node src/index.js",
     "dev": "nodemon src/index.js",
     "frontend:install": "npm --prefix dashboard/frontend ci --include=dev --ignore-scripts",
     "build": "npm run frontend:install && npm run build --prefix dashboard/frontend",
-    "postinstall": "npm run frontend:install",
     "deploy": "node src/services/discord/deployCommands.js",
     "backend": "tsx dashboard/backend/src/server.ts",
     "frontend": "npm run dev --prefix dashboard/frontend",
@@ -32,6 +31,7 @@
     "mongoose": "^8.8.3",
     "socket.io": "^4.8.3",
     "socket.io-client": "^4.8.3",
+    "tsx": "^4.22.4",
     "zod": "^4.4.3"
   },
   "devDependencies": {
@@ -42,7 +42,6 @@
     "@types/jsonwebtoken": "^9.0.10",
     "nodemon": "^3.1.7",
     "prisma": "^6.17.1",
-    "tsx": "^4.22.4",
     "typescript": "^5.9.3"
   },
   "engines": {
