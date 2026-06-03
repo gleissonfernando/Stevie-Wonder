@@ -31,15 +31,16 @@
   <body>
     <div id="root">
       <main class="login-shell boot-fallback">
-        <section class="login-panel fade-in">
+        <section class="login-panel fade-in" data-session-fallback>
           <p class="eyebrow">Acesso restrito</p>
           <h1>Steve Wonder Dashboard</h1>
-          <p>Carregando dashboard...</p>
-          <a class="login-button login-primary" href="/api/auth/discord">Entrar com Discord</a>
+          <p data-session-status>Verificando sessao...</p>
+          <a class="login-button login-primary" data-session-action href="/api/auth/discord">Entrar com Discord</a>
           <noscript>Ative o JavaScript para acessar o painel.</noscript>
         </section>
       </main>
     </div>
+    <script src="/session-boot.js" defer></script>
     <script type="module" src="/src/main.tsx"></script>
   </body>
 </html>
