@@ -13,6 +13,10 @@ export function discordAvatarUrl(user: DiscordUser) {
 }
 
 export function oauthUrl(redirectUri = env.redirectUri) {
+  if (!env.clientId) {
+    throw new Error("discord_client_id_missing");
+  }
+
   const params = new URLSearchParams({
     client_id: env.clientId,
     redirect_uri: redirectUri,
@@ -24,6 +28,10 @@ export function oauthUrl(redirectUri = env.redirectUri) {
 }
 
 export async function exchangeCode(code: string, redirectUri = env.redirectUri) {
+  if (!env.clientId) {
+    throw new Error("discord_client_id_missing");
+  }
+
   if (!env.clientSecret || env.clientSecret.startsWith("coloque_")) {
     throw new Error("discord_client_secret_missing");
   }

@@ -45,7 +45,13 @@ function sessionCookieOptions(request: Request) {
 }
 
 authRoutes.get("/discord", (request, response) => {
-  response.redirect(oauthUrl(discordRedirectUri(request)));
+  try {
+    response.redirect(oauthUrl(discordRedirectUri(request)));
+  } catch (error) {
+    const message = error instanceof Error ? error.message : "discord_auth_failed";
+    const code = message === "discord_client_id_missing" ? message : "discord_auth_failed";
+    response.redirect(`${publicBaseUrl(request)}/?error=${code}`);
+  }
 });
 
 authRoutes.get("/me", requireAuth, (request, response) => {
@@ -80,7 +86,10 @@ authRoutes.get("/discord/callback", async (request, response, next) => {
     response.redirect(`${publicBaseUrl(request)}/dashboard`);
   } catch (error) {
     const message = error instanceof Error ? error.message : "discord_auth_failed";
-    const code = message === "discord_client_secret_missing" ? message : "discord_auth_failed";
+    const code =
+      message === "discord_client_id_missing" || message === "discord_client_secret_missing"
+        ? message
+        : "discord_auth_failed";
     response.redirect(`${publicBaseUrl(request)}/?error=${code}`);
   }
 });

@@ -150,6 +150,8 @@ function LoginGate({ loading }: { loading: boolean }) {
   const errorMessage =
     error === "unauthorized_guild_member"
       ? "Sua conta nao tem permissao para acessar este dashboard."
+      : error === "discord_client_id_missing"
+        ? "O ID OAuth do Discord ainda nao foi configurado."
       : error === "discord_client_secret_missing"
         ? "O segredo OAuth do Discord ainda nao foi configurado."
         : error
