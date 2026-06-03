@@ -1,13 +1,16 @@
 import "dotenv/config";
 
+const siteUrl = (process.env.SITE_URL || "http://localhost:3001").replace(/\/+$/, "");
+
 export const env = {
   port: Number(process.env.PORT || process.env.API_PORT || (process.env.NODE_ENV === "production" ? 80 : 4000)),
-  siteUrl: process.env.SITE_URL || "http://localhost:3001",
+  siteUrl,
   apiUrl: process.env.API_URL || "http://localhost:4000",
   discordToken: process.env.DISCORD_BOT_TOKEN || process.env.DISCORD_TOKEN || "",
   clientId: process.env.CLIENT_ID || "",
   clientSecret: process.env.DISCORD_CLIENT_SECRET || "",
-  redirectUri: process.env.DISCORD_REDIRECT_URI || "http://localhost:3001/api/auth/discord/callback",
+  discordOauthScopes: process.env.DISCORD_OAUTH_SCOPES || "identify",
+  redirectUri: process.env.DISCORD_REDIRECT_URI || `${siteUrl}/api/auth/discord/callback`,
   guildId: process.env.GUILD_ID || "",
   requireGuildMember: process.env.REQUIRE_GUILD_MEMBER === "true",
   jwtSecret: process.env.JWT_SECRET || "dev-secret",

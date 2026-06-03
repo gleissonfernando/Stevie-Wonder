@@ -19,8 +19,30 @@ const app = express();
 const httpServer = createServer(app);
 createDashboardSocket(httpServer);
 
+app.set("trust proxy", 1);
 app.use(helmet());
-app.use(cors({ origin: env.siteUrl, credentials: true }));
+app.use(
+  cors({
+    origin(origin, callback) {
+      const allowedOrigins = new Set(
+        [
+          env.siteUrl,
+          env.publicSiteUrl,
+          "http://localhost:3001",
+          "http://localhost:4000"
+        ].map((value) => value.replace(/\/+$/, ""))
+      );
+
+      if (!origin || allowedOrigins.has(origin.replace(/\/+$/, ""))) {
+        callback(null, true);
+        return;
+      }
+
+      callback(new Error("Origem nao permitida pelo CORS."));
+    },
+    credentials: true
+  })
+);
 app.use(express.json({ limit: "1mb" }));
 app.use(cookieParser());
 app.use(rateLimit({ windowMs: 60_000, limit: 90 }));

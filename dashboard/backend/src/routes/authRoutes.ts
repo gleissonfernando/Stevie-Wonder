@@ -1,12 +1,51 @@
 import { Router } from "express";
+import type { Request } from "express";
 import { discordAvatarUrl, exchangeCode, fetchDiscordUser, isAuthorizedGuildMember, oauthUrl } from "../discord";
 import { env } from "../env";
 import { requireAuth, signSession } from "../auth";
 
 export const authRoutes = Router();
 
-authRoutes.get("/discord", (_request, response) => {
-  response.redirect(oauthUrl());
+function publicBaseUrl(request: Request) {
+  const configuredSiteUrl = env.siteUrl.replace(/\/+$/, "");
+
+  if (configuredSiteUrl && !configuredSiteUrl.includes("localhost")) {
+    return configuredSiteUrl;
+  }
+
+  const forwardedProto = String(request.headers["x-forwarded-proto"] || "").split(",")[0].trim();
+  const forwardedHost = String(request.headers["x-forwarded-host"] || "").split(",")[0].trim();
+  const protocol = forwardedProto || request.protocol;
+  const host = forwardedHost || request.get("host");
+
+  if (!host) return configuredSiteUrl;
+
+  return `${protocol}://${host}`.replace(/\/+$/, "");
+}
+
+function discordRedirectUri(request: Request) {
+  return process.env.DISCORD_REDIRECT_URI || `${publicBaseUrl(request)}/api/auth/discord/callback`;
+}
+
+function sessionCookieBaseOptions(request: Request) {
+  const secure = request.secure || request.headers["x-forwarded-proto"] === "https";
+
+  return {
+    httpOnly: true,
+    sameSite: "lax" as const,
+    secure
+  };
+}
+
+function sessionCookieOptions(request: Request) {
+  return {
+    ...sessionCookieBaseOptions(request),
+    maxAge: 1000 * 60 * 60 * 24 * 7
+  };
+}
+
+authRoutes.get("/discord", (request, response) => {
+  response.redirect(oauthUrl(discordRedirectUri(request)));
 });
 
 authRoutes.get("/me", requireAuth, (request, response) => {
@@ -17,16 +56,16 @@ authRoutes.get("/discord/callback", async (request, response, next) => {
   try {
     const code = String(request.query.code || "");
     if (!code) {
-      response.redirect(`${env.siteUrl}/?error=missing_code`);
+      response.redirect(`${publicBaseUrl(request)}/?error=missing_code`);
       return;
     }
 
-    const token = await exchangeCode(code);
+    const token = await exchangeCode(code, discordRedirectUri(request));
     const discordUser = await fetchDiscordUser(token.access_token);
     const authorized = await isAuthorizedGuildMember(discordUser.id);
 
     if (!authorized) {
-      response.redirect(`${env.siteUrl}/?error=unauthorized_guild_member`);
+      response.redirect(`${publicBaseUrl(request)}/?error=unauthorized_guild_member`);
       return;
     }
 
@@ -36,27 +75,22 @@ authRoutes.get("/discord/callback", async (request, response, next) => {
       avatar: discordAvatarUrl(discordUser)
     };
 
-    response.cookie(env.cookieName, signSession(user), {
-      httpOnly: true,
-      sameSite: "lax",
-      secure: process.env.NODE_ENV === "production",
-      maxAge: 1000 * 60 * 60 * 24 * 7
-    });
+    response.cookie(env.cookieName, signSession(user), sessionCookieOptions(request));
 
-    response.redirect(`${env.siteUrl}/dashboard`);
+    response.redirect(`${publicBaseUrl(request)}/dashboard`);
   } catch (error) {
     const message = error instanceof Error ? error.message : "discord_auth_failed";
     const code = message === "discord_client_secret_missing" ? message : "discord_auth_failed";
-    response.redirect(`${env.siteUrl}/?error=${code}`);
+    response.redirect(`${publicBaseUrl(request)}/?error=${code}`);
   }
 });
 
-authRoutes.post("/logout", (_request, response) => {
-  response.clearCookie(env.cookieName);
+authRoutes.post("/logout", (request, response) => {
+  response.clearCookie(env.cookieName, sessionCookieBaseOptions(request));
   response.json({ ok: true });
 });
 
-authRoutes.get("/logout", (_request, response) => {
-  response.clearCookie(env.cookieName);
-  response.redirect(env.siteUrl);
+authRoutes.get("/logout", (request, response) => {
+  response.clearCookie(env.cookieName, sessionCookieBaseOptions(request));
+  response.redirect(publicBaseUrl(request));
 });

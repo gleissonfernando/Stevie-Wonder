@@ -12,18 +12,18 @@ export function discordAvatarUrl(user: DiscordUser) {
   return `https://cdn.discordapp.com/avatars/${user.id}/${user.avatar}.png?size=128`;
 }
 
-export function oauthUrl() {
+export function oauthUrl(redirectUri = env.redirectUri) {
   const params = new URLSearchParams({
     client_id: env.clientId,
-    redirect_uri: env.redirectUri,
+    redirect_uri: redirectUri,
     response_type: "code",
-    scope: "identify"
+    scope: env.discordOauthScopes
   });
 
   return `https://discord.com/oauth2/authorize?${params.toString()}`;
 }
 
-export async function exchangeCode(code: string) {
+export async function exchangeCode(code: string, redirectUri = env.redirectUri) {
   if (!env.clientSecret || env.clientSecret.startsWith("coloque_")) {
     throw new Error("discord_client_secret_missing");
   }
@@ -33,7 +33,7 @@ export async function exchangeCode(code: string) {
     client_secret: env.clientSecret,
     grant_type: "authorization_code",
     code,
-    redirect_uri: env.redirectUri
+    redirect_uri: redirectUri
   });
 
   const response = await fetch("https://discord.com/api/v10/oauth2/token", {
