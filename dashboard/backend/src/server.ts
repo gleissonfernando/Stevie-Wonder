@@ -1,5 +1,7 @@
 import express from "express";
 import { createServer } from "http";
+import path from "path";
+import fs from "fs";
 import cors from "cors";
 import helmet from "helmet";
 import cookieParser from "cookie-parser";
@@ -34,6 +36,17 @@ app.use("/api/lives", socialLiveRoutes);
 app.use("/api/twitch", twitchRoutes);
 app.use("/api/realtime", dashboardRealtimeRoutes);
 app.use("/", realtimeRoutes);
+
+const frontendDistPath = path.resolve(process.cwd(), "dashboard/frontend/dist");
+const frontendIndexPath = path.join(frontendDistPath, "index.html");
+
+if (fs.existsSync(frontendIndexPath)) {
+  app.use(express.static(frontendDistPath));
+
+  app.get(/.*/, (_request, response) => {
+    response.sendFile(frontendIndexPath);
+  });
+}
 
 app.use((error: unknown, _request: express.Request, response: express.Response, _next: express.NextFunction) => {
   const message = error instanceof Error ? error.message : "Erro interno.";
