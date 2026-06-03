@@ -74,7 +74,7 @@ type AuthUser = {
 
 const apiBase = import.meta.env.VITE_API_URL || "";
 const apiPath = (path: string) => `${apiBase}${path}`;
-const socketUrl = import.meta.env.VITE_SOCKET_URL || import.meta.env.VITE_API_URL || "http://localhost:4000";
+const socketUrl = import.meta.env.VITE_SOCKET_URL || import.meta.env.VITE_API_URL || window.location.origin;
 const liveAlertChannelId = import.meta.env.VITE_LIVE_ALERT_CHANNEL_ID || "";
 
 const navItems: NavItem[] = [
