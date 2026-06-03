@@ -1,0 +1,76 @@
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "postgresql"
+  url      = env("DATABASE_URL")
+}
+
+enum LivePlatform {
+  TWITCH
+  YOUTUBE
+  KICK
+}
+
+enum LiveStatus {
+  PENDING
+  APPROVED
+  REJECTED
+  CHANGES_REQUESTED
+}
+
+model LiveRequest {
+  id               String         @id @default(cuid())
+  discordId        String
+  discordUsername  String
+  discordAvatar    String?
+  liveName         String
+  platform         LivePlatform
+  liveUrl          String
+  startTime        String
+  description      String
+  status           LiveStatus     @default(PENDING)
+  rejectionReason  String?
+  changeRequest    String?
+  discordMessageId String?
+  discordChannelId String?
+  createdAt        DateTime       @default(now())
+  approvedAt       DateTime?
+  updatedAt        DateTime       @updatedAt
+  adminLogs        AdminLog[]
+  notifications    Notification[]
+
+  @@index([discordId])
+  @@index([status])
+  @@index([createdAt])
+}
+
+model AdminLog {
+  id          String       @id @default(cuid())
+  action      String
+  adminId     String
+  adminTag     String?
+  liveId      String?
+  metadata    Json?
+  createdAt   DateTime     @default(now())
+  liveRequest LiveRequest? @relation(fields: [liveId], references: [id], onDelete: SetNull)
+
+  @@index([adminId])
+  @@index([createdAt])
+}
+
+model Notification {
+  id          String       @id @default(cuid())
+  discordId   String
+  title       String
+  message     String
+  read        Boolean      @default(false)
+  liveId      String?
+  createdAt   DateTime     @default(now())
+  liveRequest LiveRequest? @relation(fields: [liveId], references: [id], onDelete: Cascade)
+
+  @@index([discordId])
+  @@index([read])
+  @@index([createdAt])
+}

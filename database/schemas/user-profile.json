@@ -1,0 +1,9 @@
+{
+  "name": "UserProfile",
+  "fields": {
+    "userId": "String",
+    "guildId": "String",
+    "coins": "Number",
+    "reputation": "Number"
+  }
+}
