@@ -9,14 +9,18 @@ export const authRoutes = Router();
 function publicBaseUrl(request: Request) {
   const configuredSiteUrl = env.siteUrl.replace(/\/+$/, "");
 
-  if (configuredSiteUrl && !configuredSiteUrl.includes("localhost")) {
-    return configuredSiteUrl;
-  }
-
   const forwardedProto = String(request.headers["x-forwarded-proto"] || "").split(",")[0].trim();
   const forwardedHost = String(request.headers["x-forwarded-host"] || "").split(",")[0].trim();
   const protocol = forwardedProto || request.protocol;
   const host = forwardedHost || request.get("host");
+
+  if (host && !host.includes("localhost")) {
+    return `https://${host}`.replace(/\/+$/, "");
+  }
+
+  if (configuredSiteUrl && !configuredSiteUrl.includes("localhost")) {
+    return configuredSiteUrl;
+  }
 
   if (!host) return configuredSiteUrl;
 
@@ -24,7 +28,13 @@ function publicBaseUrl(request: Request) {
 }
 
 function discordRedirectUri(request: Request) {
-  return process.env.DISCORD_REDIRECT_URI || `${publicBaseUrl(request)}/api/auth/discord/callback`;
+  const configuredRedirectUri = process.env.DISCORD_REDIRECT_URI || "";
+
+  if (configuredRedirectUri && !configuredRedirectUri.includes("localhost")) {
+    return configuredRedirectUri;
+  }
+
+  return `${publicBaseUrl(request)}/api/auth/discord/callback`;
 }
 
 function sessionCookieBaseOptions(request: Request) {
