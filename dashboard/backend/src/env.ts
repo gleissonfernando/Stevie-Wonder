@@ -1,7 +1,7 @@
 import "dotenv/config";
 
 export const env = {
-  port: Number(process.env.API_PORT || 4000),
+  port: Number(process.env.PORT || process.env.API_PORT || (process.env.NODE_ENV === "production" ? 80 : 4000)),
   siteUrl: process.env.SITE_URL || "http://localhost:3001",
   apiUrl: process.env.API_URL || "http://localhost:4000",
   discordToken: process.env.DISCORD_BOT_TOKEN || process.env.DISCORD_TOKEN || "",

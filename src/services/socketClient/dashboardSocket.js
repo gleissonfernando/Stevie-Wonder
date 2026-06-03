@@ -3,7 +3,8 @@ const logger = require("../../utils/logger");
 const { handlers, logToConfiguredChannel } = require("../discord/dashboardActions");
 
 function startDashboardSocket(client) {
-  const url = process.env.BACKEND_SOCKET_URL || process.env.API_URL || "http://localhost:4000";
+  const localPort = process.env.PORT || process.env.API_PORT || (process.env.NODE_ENV === "production" ? "80" : "4000");
+  const url = process.env.BACKEND_SOCKET_URL || process.env.API_URL || `http://localhost:${localPort}`;
   const secret = process.env.BOT_SOCKET_SECRET || process.env.INTERNAL_WEBHOOK_SECRET || "dev-internal-secret";
   const socket = io(url, {
     auth: { role: "bot", secret },

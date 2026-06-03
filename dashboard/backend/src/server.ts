@@ -41,8 +41,12 @@ app.use((error: unknown, _request: express.Request, response: express.Response, 
   response.status(status).json({ error: message });
 });
 
-httpServer.listen(env.port, () => {
-  console.log(`Steve Wonder API online em http://localhost:${env.port}`);
+httpServer.listen(env.port, "0.0.0.0", () => {
+  console.log(`Steve Wonder API online em http://0.0.0.0:${env.port}`);
+
+  if (process.env.START_DISCORD_BOT !== "false") {
+    require("../../../src/index.js");
+  }
 
   if (env.internalWebhookSecret && env.internalWebhookSecret !== "dev-internal-secret") {
     const checkLives = () => {
