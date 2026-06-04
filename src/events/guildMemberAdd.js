@@ -1,8 +1,9 @@
 const fs = require("node:fs");
-const { AttachmentBuilder, Events, MessageFlags, PermissionsBitField } = require("discord.js");
+const { ActionRowBuilder, AttachmentBuilder, ButtonBuilder, ButtonStyle, Events, MessageFlags, PermissionsBitField } = require("discord.js");
 const welcomeConfig = require("../config/welcome");
 const { sendAuditLog } = require("../services/discord/auditLogger");
 const { buildWelcomeComponents, isConfiguredGif } = require("../utils/welcomeComponents");
+const { buildTwitchSubLink } = require("../utils/twitchSubLink");
 const logger = require("../utils/logger");
 
 function buildWelcomeFiles(config) {
@@ -55,11 +56,39 @@ async function resolveWelcomeChannel(guild, config) {
   return channelByName || null;
 }
 
+async function sendTwitchConnectDm(member) {
+  if (process.env.TWITCH_SUB_DM_ENABLED === "false") return;
+
+  const url = buildTwitchSubLink(member);
+  const row = new ActionRowBuilder().addComponents(
+    new ButtonBuilder()
+      .setLabel("Conectar Twitch")
+      .setStyle(ButtonStyle.Link)
+      .setURL(url)
+  );
+
+  await member.send({
+    embeds: [
+      {
+        color: 0x9146ff,
+        title: "Vincule sua Twitch",
+        description:
+          `Entre com sua Twitch para verificar sua inscrição no canal configurado de **${member.guild.name}** e receber seu cargo automaticamente.`,
+        footer: { text: "O link expira em 30 minutos." }
+      }
+    ],
+    components: [row]
+  }).catch((error) => {
+    logger.warn(`Nao foi possivel enviar DM de Twitch para ${member.user.tag}: ${error.message}`);
+  });
+}
+
 module.exports = {
   name: Events.GuildMemberAdd,
 
   async execute(member, client) {
     try {
+      await sendTwitchConnectDm(member);
       await assignWelcomeRole(member, welcomeConfig);
 
       await sendAuditLog(member.guild, {

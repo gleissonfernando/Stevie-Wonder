@@ -98,3 +98,65 @@ model LiveAlertConfig {
   @@index([enabled])
   @@map("live_alert_configs")
 }
+
+model TwitchSubConfig {
+  id                        String   @id @default(cuid())
+  guildId                   String   @unique @map("guild_id")
+  broadcasterLogin          String?  @map("broadcaster_login")
+  broadcasterId             String?  @map("broadcaster_id")
+  broadcasterAccessToken    String?  @map("broadcaster_access_token")
+  broadcasterRefreshToken   String?  @map("broadcaster_refresh_token")
+  broadcasterTokenExpiresAt DateTime? @map("broadcaster_token_expires_at")
+  primeRoleId               String?  @map("prime_role_id")
+  tier1RoleId               String?  @map("tier1_role_id")
+  tier2RoleId               String?  @map("tier2_role_id")
+  tier3RoleId               String?  @map("tier3_role_id")
+  logChannelId              String?  @map("log_channel_id")
+  syncIntervalHours         Int      @default(12) @map("sync_interval_hours")
+  createdAt                 DateTime @default(now()) @map("created_at")
+  updatedAt                 DateTime @updatedAt @map("updated_at")
+
+  @@index([guildId])
+  @@map("twitch_sub_configs")
+}
+
+model TwitchLinkedAccount {
+  id                    String   @id @default(cuid())
+  guildId               String   @map("guild_id")
+  discordUserId         String   @map("discord_user_id")
+  twitchUserId          String   @map("twitch_user_id")
+  twitchLogin           String   @map("twitch_login")
+  twitchDisplayName     String   @map("twitch_display_name")
+  twitchAccessToken     String?  @map("twitch_access_token")
+  twitchRefreshToken    String?  @map("twitch_refresh_token")
+  twitchTokenExpiresAt  DateTime? @map("twitch_token_expires_at")
+  active                Boolean  @default(false)
+  tier                  String?
+  roleId                String?  @map("role_id")
+  isGift                Boolean? @map("is_gift")
+  lastCheckedAt         DateTime? @map("last_checked_at")
+  lastSubscribedAt      DateTime? @map("last_subscribed_at")
+  createdAt             DateTime @default(now()) @map("created_at")
+  updatedAt             DateTime @updatedAt @map("updated_at")
+
+  @@unique([guildId, discordUserId])
+  @@unique([guildId, twitchUserId])
+  @@index([guildId])
+  @@index([active])
+  @@map("twitch_linked_accounts")
+}
+
+model TwitchSubSyncLog {
+  id            String   @id @default(cuid())
+  guildId       String   @map("guild_id")
+  discordUserId String?  @map("discord_user_id")
+  twitchUserId  String?  @map("twitch_user_id")
+  action        String
+  message       String
+  metadata      Json?
+  createdAt     DateTime @default(now()) @map("created_at")
+
+  @@index([guildId])
+  @@index([createdAt])
+  @@map("twitch_sub_sync_logs")
+}

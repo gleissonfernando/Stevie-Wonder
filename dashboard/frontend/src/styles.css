@@ -503,6 +503,87 @@ textarea {
   gap: 12px;
 }
 
+.view-grid {
+  display: grid;
+  gap: 16px;
+}
+
+.form-grid {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 12px;
+}
+
+.compact-field {
+  padding: 0;
+}
+
+.wrap-actions {
+  flex-wrap: wrap;
+}
+
+.panel-footer {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 14px;
+  margin-top: 18px;
+  padding-top: 16px;
+  border-top: 1px solid #1b2230;
+}
+
+.status-dot {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  color: #fca5a5;
+  font-size: 13px;
+  font-weight: 850;
+}
+
+.status-dot::before {
+  width: 9px;
+  height: 9px;
+  border-radius: 999px;
+  background: #ef4444;
+  content: "";
+}
+
+.status-dot.ok {
+  color: #bbf7d0;
+}
+
+.status-dot.ok::before {
+  background: #22c55e;
+}
+
+.log-list {
+  display: grid;
+  gap: 10px;
+}
+
+.log-row {
+  display: grid;
+  gap: 5px;
+  padding: 13px;
+  border: 1px solid #202635;
+  border-radius: 8px;
+  background: #090d14;
+}
+
+.log-row strong {
+  color: #ffffff;
+}
+
+.log-row span {
+  color: #cbd5e1;
+  line-height: 1.5;
+}
+
+.log-row small {
+  color: #8792a8;
+}
+
 .channel-card {
   display: grid;
   gap: 9px;
@@ -675,8 +756,13 @@ textarea {
 
   .hero-band,
   .panel-header,
+  .panel-footer,
   .modal-actions {
     align-items: stretch;
     flex-direction: column;
+  }
+
+  .form-grid {
+    grid-template-columns: 1fr;
   }
 }

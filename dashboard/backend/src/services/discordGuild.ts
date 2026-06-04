@@ -49,6 +49,22 @@ export async function fetchGuildRoles(guildId = env.guildId) {
   return rest.get(Routes.guildRoles(guildId)) as Promise<DiscordRole[]>;
 }
 
+export async function listDiscordRoles(guildId = env.guildId) {
+  const roles = await fetchGuildRoles(guildId);
+
+  return roles
+    .filter((role) => role.id !== guildId)
+    .map((role) => ({
+      id: role.id,
+      name: (role as any).name || role.id,
+      permissions: role.permissions || "0",
+      color: (role as any).color || 0,
+      position: (role as any).position || 0,
+      managed: Boolean((role as any).managed)
+    }))
+    .sort((a, b) => b.position - a.position);
+}
+
 function applyOverwrite(permissions: bigint, overwrite?: PermissionOverwrite) {
   if (!overwrite) return permissions;
 
@@ -181,6 +197,14 @@ export async function listDiscordAlertChannels(guildId = env.guildId) {
 
 export async function sendDiscordChannelMessage(channelId: string, body: unknown) {
   return rest.post(Routes.channelMessages(channelId), { body });
+}
+
+export async function addDiscordMemberRole(guildId: string, userId: string, roleId: string, reason: string) {
+  return rest.put(Routes.guildMemberRole(guildId, userId, roleId), { reason });
+}
+
+export async function removeDiscordMemberRole(guildId: string, userId: string, roleId: string, reason: string) {
+  return rest.delete(Routes.guildMemberRole(guildId, userId, roleId), { reason });
 }
 
 export async function fetchDiscordChannelMessage(channelId: string, messageId: string) {

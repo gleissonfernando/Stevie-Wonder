@@ -11,6 +11,7 @@ import { liveRoutes } from "./routes/liveRoutes";
 import { realtimeRoutes } from "./routes/realtimeRoutes";
 import { socialLiveRoutes } from "./routes/socialLiveRoutes";
 import { twitchRoutes } from "./routes/twitchRoutes";
+import { twitchSubRoutes } from "./routes/twitchSubRoutes";
 import { dashboardRealtimeRoutes } from "./routes/dashboardRealtimeRoutes";
 import { env } from "./env";
 import { createDashboardSocket } from "./socket/dashboardSocket";
@@ -56,6 +57,7 @@ app.use("/api/auth", authRoutes);
 app.use("/api/live-requests", liveRoutes);
 app.use("/api/lives", socialLiveRoutes);
 app.use("/api/twitch", twitchRoutes);
+app.use("/api/twitch-subs", twitchSubRoutes);
 app.use("/api/realtime", dashboardRealtimeRoutes);
 app.use("/", realtimeRoutes);
 
@@ -107,5 +109,17 @@ httpServer.listen(env.port, "0.0.0.0", () => {
 
     setTimeout(checkLives, 2_000);
     setInterval(checkLives, env.liveCheckIntervalSeconds * 1000);
+
+    const checkTwitchSubs = () => {
+      fetch(`http://localhost:${env.port}/api/twitch-subs/check`, {
+        method: "POST",
+        headers: { "x-internal-secret": env.internalWebhookSecret }
+      }).catch((error) => {
+        console.warn("Falha ao sincronizar subs da Twitch automaticamente.", error);
+      });
+    };
+
+    setTimeout(checkTwitchSubs, 6_000);
+    setInterval(checkTwitchSubs, 60 * 60 * 1000);
   }
 });

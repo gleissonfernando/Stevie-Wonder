@@ -25,6 +25,7 @@ export const env = {
   twitchClientId: process.env.TWITCH_CLIENT_ID || "",
   twitchClientSecret: process.env.TWITCH_CLIENT_SECRET || "",
   twitchRedirectUrl: process.env.TWITCH_REDIRECT_URL || "",
+  twitchSubRedirectUri: process.env.TWITCH_SUB_REDIRECT_URI || `${siteUrl}/api/twitch-subs/callback`,
   twitchTokenUrl: process.env.TWITCH_TOKEN_URL || "https://id.twitch.tv/oauth2/token",
   twitchHelixUrl: process.env.TWITCH_HELIX_URL || "https://api.twitch.tv/helix",
   mongodbUri: process.env.MONGODB_URI || process.env.MONGO_URI || "",
