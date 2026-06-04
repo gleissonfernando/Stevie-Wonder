@@ -4,7 +4,7 @@
   "description": "Steve Wonder, bot Discord modular com comandos, eventos, componentes e serviços.",
   "main": "src/index.js",
   "scripts": {
-    "start": "tsx dashboard/backend/src/server.ts",
+    "start": "node scripts/start-dashboard.cjs",
     "bot": "node src/index.js",
     "dev": "nodemon src/index.js",
     "frontend:install": "npm --prefix dashboard/frontend ci --include=dev --ignore-scripts",
