@@ -654,6 +654,103 @@ button:disabled {
   font-size: 14px;
 }
 
+.login-grid {
+  display: grid;
+  grid-template-columns: minmax(0, 1.1fr) minmax(320px, 0.9fr);
+  gap: 14px;
+}
+
+.login-card {
+  padding: 22px;
+  border: 1px solid rgba(247, 247, 242, 0.1);
+  border-radius: 8px;
+  background: rgba(14, 15, 13, 0.92);
+}
+
+.primary-login-card {
+  min-height: 320px;
+  background:
+    linear-gradient(150deg, rgba(80, 190, 135, 0.14), transparent 46%),
+    #0e0f0d;
+}
+
+.login-badge {
+  display: grid;
+  width: 50px;
+  height: 50px;
+  place-items: center;
+  margin-bottom: 20px;
+  border: 1px solid rgba(247, 247, 242, 0.12);
+  border-radius: 8px;
+  background: #151712;
+  color: #50be87;
+}
+
+.login-card h3 {
+  margin: 10px 0 0;
+  color: #ffffff;
+  font-size: 30px;
+  line-height: 1.08;
+}
+
+.login-card p:not(.eyebrow) {
+  max-width: 680px;
+  margin: 14px 0 0;
+  color: #c4c9bf;
+  font-size: 15px;
+  line-height: 1.7;
+}
+
+.login-actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 10px;
+  margin-top: 26px;
+}
+
+.login-steps {
+  display: grid;
+  gap: 12px;
+}
+
+.login-step {
+  display: flex;
+  gap: 12px;
+  padding: 14px;
+  border: 1px solid rgba(247, 247, 242, 0.08);
+  border-radius: 8px;
+  background: #10110f;
+}
+
+.login-step b {
+  display: grid;
+  width: 30px;
+  height: 30px;
+  flex: 0 0 auto;
+  place-items: center;
+  border-radius: 999px;
+  background: rgba(31, 122, 140, 0.22);
+  color: #a7f3ff;
+  font-size: 12px;
+}
+
+.login-step strong,
+.login-step span {
+  display: block;
+}
+
+.login-step strong {
+  color: #ffffff;
+  font-size: 14px;
+}
+
+.login-step span {
+  margin-top: 4px;
+  color: #aeb4aa;
+  font-size: 13px;
+  line-height: 1.5;
+}
+
 .live-list {
   display: grid;
   gap: 12px;
@@ -780,7 +877,8 @@ button:disabled {
 
 @media (max-width: 1160px) {
   .hero-panel,
-  .work-grid {
+  .work-grid,
+  .login-grid {
     grid-template-columns: 1fr;
   }
 
@@ -837,6 +935,7 @@ button:disabled {
   }
 
   .hero-actions,
+  .login-actions,
   .view-heading,
   .task-row,
   .security-card {

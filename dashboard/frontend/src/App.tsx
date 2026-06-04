@@ -8,6 +8,7 @@ import {
   Clock3,
   Gauge,
   LayoutDashboard,
+  LockKeyhole,
   LogIn,
   LogOut,
   Menu,
@@ -26,7 +27,7 @@ import {
 import type { LucideIcon } from "lucide-react";
 import { useEffect, useMemo, useState } from "react";
 
-type ViewId = "overview" | "lives" | "systems" | "security";
+type ViewId = "overview" | "login" | "lives" | "systems" | "security";
 
 type AuthUser = {
   id: string;
@@ -96,6 +97,7 @@ function Sidebar({
 }) {
   const items: Array<{ id: ViewId; label: string; icon: LucideIcon; badge?: string }> = [
     { id: "overview", label: "Painel", icon: LayoutDashboard },
+    { id: "login", label: "Login", icon: LockKeyhole },
     { id: "lives", label: "Lives", icon: RadioTower, badge: "Twitch" },
     { id: "systems", label: "Sistemas", icon: Server },
     { id: "security", label: "Acesso", icon: ShieldCheck }
@@ -165,11 +167,13 @@ function Topbar({
   authUser,
   sessionMessage,
   onMenu,
+  onOpenLogin,
   onLogout
 }: {
   authUser: AuthUser | null;
   sessionMessage: string;
   onMenu: () => void;
+  onOpenLogin: () => void;
   onLogout: () => void;
 }) {
   return (
@@ -204,10 +208,10 @@ function Topbar({
             </button>
           </div>
         ) : (
-          <a className="login-pill" href={authPath("/discord")}>
+          <button className="login-pill" type="button" onClick={onOpenLogin}>
             <LogIn size={16} />
             Entrar
-          </a>
+          </button>
         )}
       </div>
     </header>
@@ -234,12 +238,16 @@ function Overview({
   liveCount,
   enabledLiveCount,
   onOpenLives,
+  onOpenSecurity,
+  onOpenSystems,
   onLogin
 }: {
   authUser: AuthUser | null;
   liveCount: number;
   enabledLiveCount: number;
   onOpenLives: () => void;
+  onOpenSecurity: () => void;
+  onOpenSystems: () => void;
   onLogin: () => void;
 }) {
   const metrics: Metric[] = [
@@ -247,6 +255,32 @@ function Overview({
     { label: "Lives", value: String(liveCount), detail: `${enabledLiveCount} alertas ativos`, icon: RadioTower, tone: "blue" },
     { label: "Sistemas", value: "8", detail: "modulos preparados", icon: Gauge, tone: "amber" },
     { label: "Eventos", value: "24h", detail: "monitoramento continuo", icon: Clock3, tone: "red" }
+  ];
+  const tasks: Array<{ title: string; detail: string; action: string; onClick: () => void }> = [
+    {
+      title: "Lives da Twitch",
+      detail: "Cadastrar canais, ativar alertas e revisar destino no Discord.",
+      action: "Abrir",
+      onClick: onOpenLives
+    },
+    {
+      title: "Login e permissao",
+      detail: "Verificar se o Discord esta autenticado e renovar a sessao.",
+      action: "Entrar",
+      onClick: onLogin
+    },
+    {
+      title: "Sistemas",
+      detail: "Acessar os modulos preparados para o bot e o dashboard.",
+      action: "Abrir",
+      onClick: onOpenSystems
+    },
+    {
+      title: "Acesso",
+      detail: "Conferir o modo liberado e as informacoes da sessao.",
+      action: "Checar",
+      onClick: onOpenSecurity
+    }
   ];
 
   return (
@@ -303,17 +337,13 @@ function Overview({
               <span>Operacoes mais usadas do painel</span>
             </div>
           </div>
-          {[
-            ["Lives da Twitch", "Cadastrar canais, ativar alertas e revisar destino no Discord.", "Abrir"],
-            ["Permissoes", "Verificar se o login Discord esta chegando corretamente.", "Checar"],
-            ["Modulos", "Ativar areas futuras sem mexer no bot manualmente.", "Preparar"]
-          ].map(([title, detail, action]) => (
-            <div className="task-row" key={title}>
+          {tasks.map((task) => (
+            <div className="task-row" key={task.title}>
               <div>
-                <strong>{title}</strong>
-                <span>{detail}</span>
+                <strong>{task.title}</strong>
+                <span>{task.detail}</span>
               </div>
-              <button className="row-action" type="button">{action}</button>
+              <button className="row-action" type="button" onClick={task.onClick}>{task.action}</button>
             </div>
           ))}
         </article>
@@ -334,6 +364,90 @@ function Overview({
         </article>
       </section>
     </>
+  );
+}
+
+function LoginView({
+  authUser,
+  sessionMessage,
+  onLogin,
+  onLogout,
+  onRefresh
+}: {
+  authUser: AuthUser | null;
+  sessionMessage: string;
+  onLogin: () => void;
+  onLogout: () => void;
+  onRefresh: () => void;
+}) {
+  const steps = [
+    ["1", "Entrar com Discord", "Abre o OAuth oficial e volta para o dashboard."],
+    ["2", "Salvar sessao", "O backend cria o cookie seguro do painel."],
+    ["3", "Liberar dashboard", "A interface atualiza o usuario e habilita os recursos protegidos."]
+  ];
+
+  return (
+    <section className="view-stack">
+      <div className="view-heading">
+        <div>
+          <p className="eyebrow">Login</p>
+          <h2>Acesso ao dashboard</h2>
+          <span>{sessionMessage}</span>
+        </div>
+        <button className="ghost-action" type="button" onClick={onRefresh}>
+          <RefreshCw size={17} />
+          Verificar sessao
+        </button>
+      </div>
+
+      <div className="login-grid">
+        <article className="login-card primary-login-card">
+          <div className="login-badge">
+            {authUser ? <CheckCircle2 size={22} /> : <LockKeyhole size={22} />}
+          </div>
+          <p className="eyebrow">Conta Discord</p>
+          <h3>{authUser ? authUser.username : "Nenhuma sessao ativa"}</h3>
+          <p>
+            {authUser
+              ? "Sua conta Discord foi reconhecida pelo painel. Voce pode sair e entrar novamente quando quiser."
+              : "Entre com Discord para vincular sua conta ao painel. O dashboard permanece visivel mesmo sem login."}
+          </p>
+          <div className="login-actions">
+            <button className="primary-action" type="button" onClick={onLogin}>
+              <LogIn size={17} />
+              Entrar com Discord
+            </button>
+            {authUser ? (
+              <button className="ghost-action" type="button" onClick={onLogout}>
+                <LogOut size={17} />
+                Sair
+              </button>
+            ) : null}
+          </div>
+        </article>
+
+        <article className="login-card">
+          <div className="section-title">
+            <ShieldCheck size={20} />
+            <div>
+              <h3>Sistema de acesso</h3>
+              <span>Fluxo usado pelo dashboard</span>
+            </div>
+          </div>
+          <div className="login-steps">
+            {steps.map(([number, title, detail]) => (
+              <div className="login-step" key={title}>
+                <b>{number}</b>
+                <div>
+                  <strong>{title}</strong>
+                  <span>{detail}</span>
+                </div>
+              </div>
+            ))}
+          </div>
+        </article>
+      </div>
+    </section>
   );
 }
 
@@ -523,6 +637,7 @@ export default function App() {
           authUser={authUser}
           sessionMessage={sessionMessage}
           onMenu={() => setSidebarOpen(true)}
+          onOpenLogin={() => setActiveView("login")}
           onLogout={logout}
         />
         <div className="content">
@@ -532,9 +647,22 @@ export default function App() {
               liveCount={configs.length}
               enabledLiveCount={enabledLiveCount}
               onOpenLives={() => setActiveView("lives")}
+              onOpenSecurity={() => setActiveView("security")}
+              onOpenSystems={() => setActiveView("systems")}
+              onLogin={() => {
+                setActiveView("login");
+              }}
+            />
+          ) : null}
+          {activeView === "login" ? (
+            <LoginView
+              authUser={authUser}
+              sessionMessage={sessionMessage}
               onLogin={() => {
                 window.location.href = authPath("/discord");
               }}
+              onLogout={logout}
+              onRefresh={loadSession}
             />
           ) : null}
           {activeView === "lives" ? (
