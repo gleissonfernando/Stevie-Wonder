@@ -109,8 +109,26 @@ function readCookie(name: string) {
     ?.slice(name.length + 1);
 }
 
+function readLocalSession() {
+  try {
+    return localStorage.getItem(sessionStorageKey) || "";
+  } catch {
+    return "";
+  }
+}
+
+function writeSession(session: string) {
+  try {
+    localStorage.setItem(sessionStorageKey, session);
+  } catch {
+    // Cookie fallback keeps auth working in browsers that block localStorage.
+  }
+
+  document.cookie = `live_alerts_session_fallback=${encodeURIComponent(session)}; path=/; max-age=604800; SameSite=Lax`;
+}
+
 function storedSessionToken() {
-  return localStorage.getItem(sessionStorageKey) || decodeURIComponent(readCookie("live_alerts_session_fallback") || "");
+  return readLocalSession() || decodeURIComponent(readCookie("live_alerts_session_fallback") || "");
 }
 
 async function apiJson<T>(path: string, options?: RequestInit): Promise<T> {
@@ -135,13 +153,13 @@ async function apiJson<T>(path: string, options?: RequestInit): Promise<T> {
 
 function captureSessionFromUrl() {
   const hash = window.location.hash.replace(/^#/, "");
-  const params = new URLSearchParams(hash);
-  const session = params.get("session");
+  const hashParams = new URLSearchParams(hash);
+  const searchParams = new URLSearchParams(window.location.search);
+  const session = hashParams.get("session") || searchParams.get("session");
 
   if (!session) return;
 
-  localStorage.setItem(sessionStorageKey, session);
-  document.cookie = `live_alerts_session_fallback=${encodeURIComponent(session)}; path=/; max-age=604800; SameSite=Lax`;
+  writeSession(session);
   window.history.replaceState(null, document.title, window.location.pathname || "/");
 }
 
@@ -797,7 +815,11 @@ export default function App() {
       credentials: "include",
       headers: storedSession ? { Authorization: `Bearer ${storedSession}` } : undefined
     }).catch(() => null);
-    localStorage.removeItem(sessionStorageKey);
+    try {
+      localStorage.removeItem(sessionStorageKey);
+    } catch {
+      // Ignore storage cleanup failures; the cookie fallback is cleared below.
+    }
     document.cookie = "live_alerts_session_fallback=; path=/; max-age=0; SameSite=Lax";
     setUser(null);
   }

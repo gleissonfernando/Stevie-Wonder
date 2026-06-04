@@ -48,7 +48,7 @@ function sessionCookieBaseOptions(request: Request) {
   return {
     httpOnly: true,
     path: "/",
-    sameSite: isLocalhost ? ("lax" as const) : ("none" as const),
+    sameSite: "lax" as const,
     secure
   };
 }
@@ -58,46 +58,6 @@ function sessionCookieOptions(request: Request) {
     ...sessionCookieBaseOptions(request),
     maxAge: 1000 * 60 * 60 * 24 * 7
   };
-}
-
-function sessionBridgeHtml(session: string, redirectUrl: string) {
-  const serializedSession = JSON.stringify(session);
-  const serializedRedirectUrl = JSON.stringify(redirectUrl);
-
-  return `<!doctype html>
-<html lang="pt-BR">
-  <head>
-    <meta charset="UTF-8" />
-    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-    <title>Sessao validada</title>
-    <style>
-      html, body { min-height: 100%; margin: 0; background: #000; color: #fff; font-family: Inter, system-ui, sans-serif; }
-      main { min-height: 100vh; display: grid; place-items: center; padding: 24px; }
-      section { width: min(100%, 440px); padding: 32px; border: 1px solid #262626; border-radius: 8px; background: #0d0d0d; text-align: center; }
-      h1 { margin: 0; font-size: 30px; }
-      p { color: #c7c7c7; line-height: 1.6; }
-      a { display: inline-flex; min-height: 42px; align-items: center; padding: 0 15px; border-radius: 8px; background: #f5f5f5; color: #050505; font-weight: 800; text-decoration: none; }
-    </style>
-  </head>
-  <body>
-    <main>
-      <section>
-        <h1>Acesso liberado</h1>
-        <p>Sua conta Discord foi verificada. Abrindo o dashboard...</p>
-        <a href="/dashboard">Abrir dashboard</a>
-      </section>
-    </main>
-    <script>
-      try {
-        localStorage.setItem("live_alerts_session", ${serializedSession});
-        document.cookie = "live_alerts_session_fallback=" + encodeURIComponent(${serializedSession}) + "; path=/; max-age=604800; SameSite=Lax";
-      } catch (error) {
-        document.cookie = "live_alerts_session_fallback=" + encodeURIComponent(${serializedSession}) + "; path=/; max-age=604800; SameSite=Lax";
-      }
-      window.location.replace(${serializedRedirectUrl});
-    </script>
-  </body>
-</html>`;
 }
 
 authRoutes.get("/discord", (request, response) => {
@@ -135,12 +95,7 @@ authRoutes.get("/discord/callback", async (request, response, next) => {
 
     const session = signSession(user);
     response.cookie(env.cookieName, session, sessionCookieOptions(request));
-
-    response.setHeader(
-      "Content-Security-Policy",
-      "default-src 'self'; script-src 'self' 'unsafe-inline'; style-src 'self' 'unsafe-inline'; img-src 'self' data: https:; object-src 'none'; base-uri 'self'; frame-ancestors 'self'"
-    );
-    response.send(sessionBridgeHtml(session, `${publicBaseUrl(request)}/dashboard`));
+    response.redirect(`${publicBaseUrl(request)}/dashboard#session=${encodeURIComponent(session)}`);
   } catch (error) {
     const message = error instanceof Error ? error.message : "discord_auth_failed";
     const code =
