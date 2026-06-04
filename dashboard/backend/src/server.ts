@@ -93,7 +93,7 @@ app.use((error: unknown, _request: express.Request, response: express.Response, 
 httpServer.listen(env.port, "0.0.0.0", () => {
   console.log(`Steve Wonder API online em http://0.0.0.0:${env.port}`);
 
-  if (process.env.START_DISCORD_BOT !== "false") {
+  if (process.env.START_DISCORD_BOT === "true") {
     require("../../../src/index.js");
   }
 
