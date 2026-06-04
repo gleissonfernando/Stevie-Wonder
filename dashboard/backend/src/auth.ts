@@ -22,7 +22,9 @@ export function signSession(user: AuthUser) {
 }
 
 export function requireAuth(request: Request, response: Response, next: NextFunction) {
-  const token = request.cookies?.[env.cookieName];
+  const authorization = String(request.headers.authorization || "");
+  const bearerToken = authorization.startsWith("Bearer ") ? authorization.slice("Bearer ".length).trim() : "";
+  const token = request.cookies?.[env.cookieName] || bearerToken;
 
   if (!token) {
     response.status(401).json({ error: "Login Discord obrigatorio." });

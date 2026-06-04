@@ -93,9 +93,10 @@ authRoutes.get("/discord/callback", async (request, response, next) => {
       accessToken: token.access_token
     };
 
-    response.cookie(env.cookieName, signSession(user), sessionCookieOptions(request));
+    const session = signSession(user);
+    response.cookie(env.cookieName, session, sessionCookieOptions(request));
 
-    response.redirect(`${publicBaseUrl(request)}/dashboard`);
+    response.redirect(`${publicBaseUrl(request)}/dashboard#session=${encodeURIComponent(session)}`);
   } catch (error) {
     const message = error instanceof Error ? error.message : "discord_auth_failed";
     const code =

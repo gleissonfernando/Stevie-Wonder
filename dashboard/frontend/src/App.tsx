@@ -97,13 +97,19 @@ type TwitchSubStat = {
 const apiBase = import.meta.env.VITE_API_URL || "";
 const apiPath = (path: string) => `${apiBase}${path}`;
 const authPath = (path: string) => apiPath(`/api/auth${path}`);
+const sessionStorageKey = "live_alerts_session";
 
 const defaultMessage = "@everyone";
 
 async function apiJson<T>(path: string, options?: RequestInit): Promise<T> {
+  const storedSession = localStorage.getItem(sessionStorageKey);
   const response = await fetch(apiPath(path), {
     credentials: "include",
-    headers: { "Content-Type": "application/json", ...(options?.headers || {}) },
+    headers: {
+      "Content-Type": "application/json",
+      ...(storedSession ? { Authorization: `Bearer ${storedSession}` } : {}),
+      ...(options?.headers || {})
+    },
     ...options
   });
 
@@ -113,6 +119,17 @@ async function apiJson<T>(path: string, options?: RequestInit): Promise<T> {
   }
 
   return response.json();
+}
+
+function captureSessionFromUrl() {
+  const hash = window.location.hash.replace(/^#/, "");
+  const params = new URLSearchParams(hash);
+  const session = params.get("session");
+
+  if (!session) return;
+
+  localStorage.setItem(sessionStorageKey, session);
+  window.history.replaceState(null, document.title, window.location.pathname || "/");
 }
 
 function formatDate(value: string) {
@@ -640,6 +657,7 @@ export default function App() {
   }
 
   useEffect(() => {
+    captureSessionFromUrl();
     loadSession();
   }, []);
 
@@ -760,7 +778,13 @@ export default function App() {
   }
 
   async function logout() {
-    await fetch(authPath("/logout"), { method: "POST", credentials: "include" }).catch(() => null);
+    const storedSession = localStorage.getItem(sessionStorageKey);
+    await fetch(authPath("/logout"), {
+      method: "POST",
+      credentials: "include",
+      headers: storedSession ? { Authorization: `Bearer ${storedSession}` } : undefined
+    }).catch(() => null);
+    localStorage.removeItem(sessionStorageKey);
     setUser(null);
   }
 
