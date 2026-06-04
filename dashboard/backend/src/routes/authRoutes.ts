@@ -1,6 +1,6 @@
 import { Router } from "express";
 import type { Request } from "express";
-import { discordAvatarUrl, exchangeCode, fetchDiscordUser, isAuthorizedGuildMember, oauthUrl } from "../discord";
+import { discordAvatarUrl, exchangeCode, fetchDiscordUser, oauthUrl } from "../discord";
 import { env } from "../env";
 import { requireAuth, signSession } from "../auth";
 
@@ -85,12 +85,6 @@ authRoutes.get("/discord/callback", async (request, response, next) => {
 
     const token = await exchangeCode(code, discordRedirectUri(request));
     const discordUser = await fetchDiscordUser(token.access_token);
-    const authorized = await isAuthorizedGuildMember(discordUser.id);
-
-    if (!authorized) {
-      response.redirect(`${publicBaseUrl(request)}/?error=unauthorized_guild_member`);
-      return;
-    }
 
     const user = {
       id: discordUser.id,

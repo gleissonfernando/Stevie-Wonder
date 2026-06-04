@@ -517,9 +517,15 @@ export default function App() {
     try {
       const session = await apiJson<{ user: AuthUser }>("/api/auth/me", { cache: "no-store" });
       setUser(session.user);
-      const guildData = await apiJson<{ guilds: Guild[] }>("/api/lives/guilds", { cache: "no-store" });
-      setGuilds(guildData.guilds);
-      setSelectedGuildId((current) => current || guildData.guilds[0]?.id || "");
+      try {
+        const guildData = await apiJson<{ guilds: Guild[] }>("/api/lives/guilds", { cache: "no-store" });
+        setGuilds(guildData.guilds);
+        setSelectedGuildId((current) => current || guildData.guilds[0]?.id || "");
+      } catch (guildError) {
+        setGuilds([]);
+        setSelectedGuildId("");
+        setError(guildError instanceof Error ? guildError.message : "Sessao criada, mas nao foi possivel listar servidores.");
+      }
     } catch (err) {
       setUser(null);
       setError(err instanceof Error ? err.message : "Login Discord obrigatorio.");
