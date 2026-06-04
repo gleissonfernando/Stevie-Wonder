@@ -1,4 +1,4 @@
-import { StrictMode } from "react";
+import { Component, StrictMode, type ErrorInfo, type ReactNode } from "react";
 import { createRoot } from "react-dom/client";
 import { Bot, LogIn } from "lucide-react";
 import App from "./App";
@@ -29,15 +29,49 @@ function BootErrorScreen({ message }: { message: string }) {
   );
 }
 
+class RootErrorBoundary extends Component<{ children: ReactNode }, { message: string }> {
+  state = { message: "" };
+
+  static getDerivedStateFromError(error: unknown) {
+    return {
+      message: error instanceof Error ? error.message : "Erro ao iniciar o dashboard."
+    };
+  }
+
+  componentDidCatch(error: unknown, info: ErrorInfo) {
+    console.error("Dashboard render error", error, info);
+  }
+
+  render() {
+    if (this.state.message) {
+      return <BootErrorScreen message={this.state.message} />;
+    }
+
+    return this.props.children;
+  }
+}
+
 const root = createRoot(rootElement);
+const renderBootError = (message: string) => root.render(<BootErrorScreen message={message} />);
+
+window.addEventListener("error", (event) => {
+  renderBootError(event.error instanceof Error ? event.error.message : event.message || "Erro ao iniciar o dashboard.");
+});
+
+window.addEventListener("unhandledrejection", (event) => {
+  const reason = event.reason;
+  renderBootError(reason instanceof Error ? reason.message : "Erro ao carregar o dashboard.");
+});
 
 try {
   root.render(
     <StrictMode>
-      <App />
+      <RootErrorBoundary>
+        <App />
+      </RootErrorBoundary>
     </StrictMode>
   );
 } catch (error) {
   const message = error instanceof Error ? error.message : "Erro ao iniciar o dashboard.";
-  root.render(<BootErrorScreen message={message} />);
+  renderBootError(message);
 }

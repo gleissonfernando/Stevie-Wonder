@@ -49,6 +49,17 @@ button:disabled {
   background: #030303;
 }
 
+.loading-screen {
+  align-content: center;
+  gap: 12px;
+}
+
+.loading-text {
+  color: #c7c7c7;
+  font-size: 14px;
+  font-weight: 750;
+}
+
 .login-panel {
   width: min(100%, 460px);
   padding: 34px;

@@ -133,15 +133,30 @@ function storedSessionToken() {
 
 async function apiJson<T>(path: string, options?: RequestInit): Promise<T> {
   const storedSession = storedSessionToken();
-  const response = await fetch(apiPath(path), {
-    credentials: "include",
-    headers: {
-      "Content-Type": "application/json",
-      ...(storedSession ? { Authorization: `Bearer ${storedSession}` } : {}),
-      ...(options?.headers || {})
-    },
-    ...options
-  });
+  const controller = new AbortController();
+  const timeout = window.setTimeout(() => controller.abort(), 12000);
+  let response: Response;
+
+  try {
+    response = await fetch(apiPath(path), {
+      credentials: "include",
+      headers: {
+        "Content-Type": "application/json",
+        ...(storedSession ? { Authorization: `Bearer ${storedSession}` } : {}),
+        ...(options?.headers || {})
+      },
+      ...options,
+      signal: options?.signal || controller.signal
+    });
+  } catch (error) {
+    if (error instanceof DOMException && error.name === "AbortError") {
+      throw new Error("Tempo esgotado ao conectar com a API.");
+    }
+
+    throw error;
+  } finally {
+    window.clearTimeout(timeout);
+  }
 
   if (!response.ok) {
     const data = await response.json().catch(() => ({ error: "Erro ao processar requisicao." }));
@@ -828,6 +843,7 @@ export default function App() {
     return (
       <main className="loading-screen">
         <Loader2 className="spin" size={30} />
+        <span className="loading-text">Carregando dashboard...</span>
       </main>
     );
   }
