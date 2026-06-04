@@ -144,7 +144,7 @@ async function requestJson<T>(path: string, options?: RequestInit): Promise<T> {
   return response.json();
 }
 
-function LoginGate({ loading }: { loading: boolean }) {
+function LoginGate({ loading, authError }: { loading: boolean; authError?: string }) {
   const params = new URLSearchParams(window.location.search);
   const error = params.get("error");
   const errorMessage =
@@ -156,6 +156,8 @@ function LoginGate({ loading }: { loading: boolean }) {
         ? "O segredo OAuth do Discord ainda nao foi configurado."
         : error
           ? "Nao foi possivel concluir o login com Discord."
+          : authError
+            ? authError
           : "";
 
   return (
@@ -749,20 +751,29 @@ export default function App() {
   const [activeView, setActiveView] = useState<ViewId>("dashboard");
   const [authUser, setAuthUser] = useState<AuthUser | null>(null);
   const [authLoading, setAuthLoading] = useState(true);
+  const [authError, setAuthError] = useState("");
 
   useEffect(() => {
     let mounted = true;
 
     fetch(authPath("/me"), { credentials: "include", cache: "no-store" })
       .then(async (response) => {
-        if (!response.ok) return null;
+        if (!response.ok) {
+          const data = await response.json().catch(() => ({ error: "Sessao nao encontrada no navegador." }));
+          if (mounted) setAuthError(data.error || "Sessao nao encontrada no navegador.");
+          return null;
+        }
+        if (mounted) setAuthError("");
         return response.json() as Promise<{ user: AuthUser }>;
       })
       .then((data) => {
         if (mounted) setAuthUser(data?.user || null);
       })
       .catch(() => {
-        if (mounted) setAuthUser(null);
+        if (mounted) {
+          setAuthUser(null);
+          setAuthError("Nao foi possivel verificar sua sessao. Atualize a pagina e tente entrar novamente.");
+        }
       })
       .finally(() => {
         if (mounted) setAuthLoading(false);
@@ -783,7 +794,7 @@ export default function App() {
   }
 
   if (authLoading || !authUser) {
-    return <LoginGate loading={authLoading} />;
+    return <LoginGate loading={authLoading} authError={authError} />;
   }
 
   return (
