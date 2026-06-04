@@ -46,6 +46,7 @@ function sessionCookieBaseOptions(request: Request) {
 
   return {
     httpOnly: true,
+    path: "/",
     sameSite: "lax" as const,
     secure
   };
