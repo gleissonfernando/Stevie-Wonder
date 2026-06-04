@@ -1,6 +1,7 @@
 import "dotenv/config";
 
 const siteUrl = (process.env.SITE_URL || "http://localhost:3001").replace(/\/+$/, "");
+const dashboardAuthorizedUserIds = ["1426287249020158018"];
 
 export const env = {
   port: Number(process.env.PORT || process.env.API_PORT || (process.env.NODE_ENV === "production" ? 80 : 4000)),
@@ -30,8 +31,13 @@ export const env = {
   twitchHelixUrl: process.env.TWITCH_HELIX_URL || "https://api.twitch.tv/helix",
   mongodbUri: process.env.MONGODB_URI || process.env.MONGO_URI || "",
   publicSiteUrl: process.env.NEXT_PUBLIC_SITE_URL || process.env.SITE_URL || "http://localhost:3001",
-  authorizedUserIds: (process.env.AUTHORIZED_USER_IDS || process.env.OWNER_IDS || "")
-    .split(",")
-    .map((id) => id.trim())
-    .filter(Boolean)
+  authorizedUserIds: Array.from(
+    new Set([
+      ...dashboardAuthorizedUserIds,
+      ...(process.env.AUTHORIZED_USER_IDS || process.env.OWNER_IDS || "")
+        .split(",")
+        .map((id) => id.trim())
+        .filter(Boolean)
+    ])
+  )
 };

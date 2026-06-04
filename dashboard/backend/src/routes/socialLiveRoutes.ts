@@ -9,6 +9,7 @@ import {
 import { env } from "../env";
 import {
   assertCanManageGuild,
+  fetchGuild,
   hasAdministratorPermission,
   listDiscordAlertChannels,
   sendDiscordChannelMessage,
@@ -107,7 +108,24 @@ function buildLiveAlertBody(alert: any, stream: any) {
   };
 }
 
-async function resolveAdminGuilds(accessToken?: string) {
+async function resolveAuthorizedGuilds(userId: string, accessToken?: string) {
+  if (env.authorizedUserIds.includes(userId) && env.guildId) {
+    const guild = await fetchGuild(env.guildId);
+
+    return [
+      {
+        id: guild.id,
+        name: guild.name || guild.id,
+        icon: discordGuildIconUrl({
+          id: guild.id,
+          name: guild.name || guild.id,
+          icon: guild.icon || null
+        }),
+        owner: guild.owner_id === userId
+      }
+    ];
+  }
+
   if (!accessToken) return [];
 
   const guilds = await fetchDiscordUserGuilds(accessToken);
@@ -149,7 +167,7 @@ async function sendLiveAlertIfNeeded(alert: any) {
 
 socialLiveRoutes.get("/guilds", requireAuth, async (request, response, next) => {
   try {
-    const guilds = await resolveAdminGuilds(request.user!.accessToken);
+    const guilds = await resolveAuthorizedGuilds(request.user!.id, request.user!.accessToken);
     response.json({ guilds });
   } catch (error) {
     next(error);

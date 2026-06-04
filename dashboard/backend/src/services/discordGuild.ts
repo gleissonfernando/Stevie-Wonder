@@ -7,6 +7,7 @@ type Guild = {
   id: string;
   owner_id: string;
   name?: string;
+  icon?: string | null;
 };
 
 type GuildMember = {
