@@ -38,7 +38,11 @@ function discordRedirectUri(request: Request) {
 }
 
 function sessionCookieBaseOptions(request: Request) {
-  const secure = request.secure || request.headers["x-forwarded-proto"] === "https";
+  const host = request.get("host") || "";
+  const secure =
+    request.secure ||
+    request.headers["x-forwarded-proto"] === "https" ||
+    !host.includes("localhost");
 
   return {
     httpOnly: true,
