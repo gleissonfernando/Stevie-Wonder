@@ -70,6 +70,7 @@ type AuthUser = {
   id: string;
   username: string;
   avatar?: string | null;
+  fallback?: boolean;
 };
 
 const apiBase = import.meta.env.VITE_API_URL || "";
@@ -760,7 +761,10 @@ export default function App() {
       .then(async (response) => {
         if (!response.ok) {
           const data = await response.json().catch(() => ({ error: "Sessao nao encontrada no navegador." }));
-          if (mounted) setAuthError(data.error || "Sessao nao encontrada no navegador.");
+          if (mounted) {
+            setAuthError(data.error || "Sessao nao encontrada no navegador.");
+            setAuthUser({ id: "dashboard-local", username: "Dashboard liberado", fallback: true });
+          }
           return null;
         }
         if (mounted) setAuthError("");
@@ -771,7 +775,7 @@ export default function App() {
       })
       .catch(() => {
         if (mounted) {
-          setAuthUser(null);
+          setAuthUser({ id: "dashboard-local", username: "Dashboard liberado", fallback: true });
           setAuthError("Nao foi possivel verificar sua sessao. Atualize a pagina e tente entrar novamente.");
         }
       })
