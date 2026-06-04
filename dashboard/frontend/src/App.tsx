@@ -101,8 +101,20 @@ const sessionStorageKey = "live_alerts_session";
 
 const defaultMessage = "@everyone";
 
+function readCookie(name: string) {
+  return document.cookie
+    .split(";")
+    .map((item) => item.trim())
+    .find((item) => item.startsWith(`${name}=`))
+    ?.slice(name.length + 1);
+}
+
+function storedSessionToken() {
+  return localStorage.getItem(sessionStorageKey) || decodeURIComponent(readCookie("live_alerts_session_fallback") || "");
+}
+
 async function apiJson<T>(path: string, options?: RequestInit): Promise<T> {
-  const storedSession = localStorage.getItem(sessionStorageKey);
+  const storedSession = storedSessionToken();
   const response = await fetch(apiPath(path), {
     credentials: "include",
     headers: {
@@ -129,6 +141,7 @@ function captureSessionFromUrl() {
   if (!session) return;
 
   localStorage.setItem(sessionStorageKey, session);
+  document.cookie = `live_alerts_session_fallback=${encodeURIComponent(session)}; path=/; max-age=604800; SameSite=Lax`;
   window.history.replaceState(null, document.title, window.location.pathname || "/");
 }
 
@@ -778,13 +791,14 @@ export default function App() {
   }
 
   async function logout() {
-    const storedSession = localStorage.getItem(sessionStorageKey);
+    const storedSession = storedSessionToken();
     await fetch(authPath("/logout"), {
       method: "POST",
       credentials: "include",
       headers: storedSession ? { Authorization: `Bearer ${storedSession}` } : undefined
     }).catch(() => null);
     localStorage.removeItem(sessionStorageKey);
+    document.cookie = "live_alerts_session_fallback=; path=/; max-age=0; SameSite=Lax";
     setUser(null);
   }
 

@@ -87,10 +87,27 @@
         text-decoration: none;
       }
     </style>
-    <script type="module" crossorigin src="/assets/index-Vf0CdhcE.js"></script>
+    <script type="module" crossorigin src="/assets/index-BeaIR71Y.js"></script>
     <link rel="stylesheet" crossorigin href="/assets/index-BOS1fzFx.css">
   </head>
   <body>
+    <script>
+      (function () {
+        var hash = window.location.hash ? window.location.hash.substring(1) : "";
+        var params = new URLSearchParams(hash);
+        var session = params.get("session");
+
+        if (!session) return;
+
+        try {
+          window.localStorage.setItem("live_alerts_session", session);
+        } catch (error) {
+          document.cookie = "live_alerts_session_fallback=" + encodeURIComponent(session) + "; path=/; max-age=604800; SameSite=Lax";
+        }
+
+        window.history.replaceState(null, document.title, "/dashboard");
+      })();
+    </script>
     <div id="root">
       <main class="boot-fallback">
         <section class="boot-card">
