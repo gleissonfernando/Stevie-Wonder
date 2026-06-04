@@ -22,22 +22,81 @@
         min-height: 100vh;
         display: grid;
         place-items: center;
+        padding: 24px;
         background: #000000;
-        color: #a1a1aa;
+        color: #ffffff;
         font-family: Inter, ui-sans-serif, system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
       }
+
+      .boot-card {
+        width: min(100%, 460px);
+        padding: 34px;
+        border: 1px solid #202635;
+        border-radius: 8px;
+        background: #0d1118;
+        box-shadow: 0 24px 80px rgba(0, 0, 0, 0.42);
+        text-align: center;
+      }
+
+      .boot-logo {
+        display: grid;
+        width: 68px;
+        height: 68px;
+        place-items: center;
+        margin: 0 auto 18px;
+        border-radius: 8px;
+        background: #2563eb;
+        color: #ffffff;
+        font-size: 30px;
+        font-weight: 900;
+      }
+
+      .boot-card .eyebrow {
+        margin: 0;
+        color: #8792a8;
+        font-size: 11px;
+        font-weight: 800;
+        text-transform: uppercase;
+      }
+
+      .boot-card h1 {
+        margin: 10px 0 0;
+        color: #ffffff;
+        font-size: 34px;
+        line-height: 1.08;
+      }
+
+      .boot-card p {
+        margin: 14px 0 24px;
+        color: #b8c1d3;
+        line-height: 1.65;
+      }
+
+      .boot-button {
+        display: inline-flex;
+        min-height: 42px;
+        align-items: center;
+        justify-content: center;
+        padding: 0 15px;
+        border-radius: 8px;
+        background: #2563eb;
+        color: #ffffff;
+        font-weight: 800;
+        text-decoration: none;
+      }
     </style>
-    <script type="module" crossorigin src="/assets/index-i69dIqpS.js"></script>
+    <script type="module" crossorigin src="/assets/index-BAtKzbTD.js"></script>
     <link rel="stylesheet" crossorigin href="/assets/index-CFiYGn2T.css">
   </head>
   <body>
     <div id="root">
-      <main class="login-shell boot-fallback">
-        <section class="login-panel fade-in">
+      <main class="boot-fallback">
+        <section class="boot-card">
+          <div class="boot-logo">T</div>
           <p class="eyebrow">Live Alerts</p>
-          <h1>Painel Black</h1>
-          <p>Carregando painel...</p>
-          <a class="login-button login-primary" href="/api/auth/discord">Entrar com Discord</a>
+          <h1>Painel de alertas para Discord</h1>
+          <p>Entre com sua conta Discord para configurar alertas de live e subs da Twitch.</p>
+          <a class="boot-button" href="/api/auth/discord">Entrar com Discord</a>
           <noscript>Ative o JavaScript para acessar o painel.</noscript>
         </section>
       </main>

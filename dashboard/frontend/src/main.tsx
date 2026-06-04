@@ -18,12 +18,12 @@ try {
 } catch (error) {
   const message = error instanceof Error ? error.message : "Erro ao iniciar o dashboard.";
   rootElement.innerHTML = `
-    <main class="login-shell">
-      <section class="login-panel fade-in">
-        <p class="eyebrow">Erro de inicializacao</p>
+    <main class="login-screen">
+      <section class="login-panel">
+        <p class="eyebrow">Live Alerts</p>
         <h1>Live Alerts Dashboard</h1>
         <p>${message}</p>
-        <a class="login-button login-primary" href="/api/auth/discord">Entrar com Discord</a>
+        <a class="discord-button" href="/api/auth/discord">Entrar com Discord</a>
       </section>
     </main>
   `;
