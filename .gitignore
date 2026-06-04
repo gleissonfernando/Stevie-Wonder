@@ -11,6 +11,8 @@ logs/
 dist/
 build/
 dashboard/frontend/dist/
+!dashboard/frontend/dist/
+!dashboard/frontend/dist/**
 
 *.tsbuildinfo
 

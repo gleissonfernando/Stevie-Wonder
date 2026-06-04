@@ -21,7 +21,7 @@ try {
     <main class="login-shell">
       <section class="login-panel fade-in">
         <p class="eyebrow">Erro de inicializacao</p>
-        <h1>Steve Wonder Dashboard</h1>
+        <h1>Live Alerts Dashboard</h1>
         <p>${message}</p>
         <a class="login-button login-primary" href="/api/auth/discord">Entrar com Discord</a>
       </section>

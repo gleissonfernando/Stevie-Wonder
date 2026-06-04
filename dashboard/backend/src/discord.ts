@@ -7,6 +7,14 @@ type DiscordUser = {
   avatar?: string | null;
 };
 
+export type DiscordUserGuild = {
+  id: string;
+  name: string;
+  icon?: string | null;
+  owner?: boolean;
+  permissions?: string;
+};
+
 export function discordAvatarUrl(user: DiscordUser) {
   if (!user.avatar) return null;
   return `https://cdn.discordapp.com/avatars/${user.id}/${user.avatar}.png?size=128`;
@@ -67,6 +75,23 @@ export async function fetchDiscordUser(accessToken: string) {
   }
 
   return response.json() as Promise<DiscordUser>;
+}
+
+export async function fetchDiscordUserGuilds(accessToken: string) {
+  const response = await fetch("https://discord.com/api/v10/users/@me/guilds", {
+    headers: { Authorization: `Bearer ${accessToken}` }
+  });
+
+  if (!response.ok) {
+    throw new Error("Falha ao buscar servidores do Discord.");
+  }
+
+  return response.json() as Promise<DiscordUserGuild[]>;
+}
+
+export function discordGuildIconUrl(guild: DiscordUserGuild) {
+  if (!guild.icon) return null;
+  return `https://cdn.discordapp.com/icons/${guild.id}/${guild.icon}.png?size=96`;
 }
 
 export async function isAuthorizedGuildMember(userId: string) {

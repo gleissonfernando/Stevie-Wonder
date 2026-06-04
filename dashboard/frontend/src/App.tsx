@@ -1,33 +1,26 @@
 import {
-  Activity,
   Bell,
   Bot,
   CheckCircle2,
-  ChevronRight,
-  CircleAlert,
-  Clock3,
-  Gauge,
+  Hash,
   LayoutDashboard,
-  LockKeyhole,
+  Loader2,
   LogIn,
   LogOut,
   Menu,
+  Pencil,
+  Plus,
   RadioTower,
-  RefreshCw,
-  Search,
+  Save,
   Server,
   Settings,
-  ShieldCheck,
-  Sparkles,
+  Trash2,
   Twitch,
-  UserRound,
-  X,
-  Zap
+  X
 } from "lucide-react";
-import type { LucideIcon } from "lucide-react";
 import { useEffect, useMemo, useState } from "react";
 
-type ViewId = "overview" | "login" | "lives" | "systems" | "security";
+type Page = "home" | "alerts" | "channels" | "settings";
 
 type AuthUser = {
   id: string;
@@ -35,34 +28,46 @@ type AuthUser = {
   avatar?: string | null;
 };
 
-type TwitchConfig = {
+type Guild = {
   id: string;
-  twitchChannelName: string;
-  twitchDisplayName?: string;
-  twitchAvatarUrl?: string;
-  discordChannelId: string;
-  enabled: boolean;
-  updatedAt: string;
+  name: string;
+  icon?: string | null;
+  owner?: boolean;
 };
 
-type DiscordAlertChannel = {
+type TextChannel = {
   id: string;
   name: string;
 };
 
-type Metric = {
-  label: string;
-  value: string;
-  detail: string;
-  icon: LucideIcon;
-  tone: "green" | "blue" | "amber" | "red";
+type LiveAlert = {
+  id: string;
+  guildId: string;
+  streamerUrl: string;
+  streamerName: string;
+  twitchAvatarUrl?: string | null;
+  textChannelId: string;
+  customMessage: string;
+  enabled: boolean;
+  createdAt: string;
+  updatedAt: string;
+};
+
+type AlertForm = {
+  id?: string;
+  streamerUrl: string;
+  textChannelId: string;
+  customMessage: string;
+  enabled: boolean;
 };
 
 const apiBase = import.meta.env.VITE_API_URL || "";
 const apiPath = (path: string) => `${apiBase}${path}`;
 const authPath = (path: string) => apiPath(`/api/auth${path}`);
 
-async function requestJson<T>(path: string, options?: RequestInit): Promise<T> {
+const defaultMessage = "@everyone";
+
+async function apiJson<T>(path: string, options?: RequestInit): Promise<T> {
   const response = await fetch(apiPath(path), {
     credentials: "include",
     headers: { "Content-Type": "application/json", ...(options?.headers || {}) },
@@ -77,601 +82,540 @@ async function requestJson<T>(path: string, options?: RequestInit): Promise<T> {
   return response.json();
 }
 
-function relativeTime(value?: string) {
-  if (!value) return "sem registro";
-  const date = new Date(value);
-  if (Number.isNaN(date.getTime())) return "sem registro";
-  return date.toLocaleString("pt-BR", { dateStyle: "short", timeStyle: "short" });
+function formatDate(value: string) {
+  return new Intl.DateTimeFormat("pt-BR", {
+    day: "2-digit",
+    month: "2-digit",
+    hour: "2-digit",
+    minute: "2-digit"
+  }).format(new Date(value));
+}
+
+function LoginScreen({ error }: { error: string }) {
+  return (
+    <main className="login-screen">
+      <section className="login-panel">
+        <div className="logo-mark">
+          <Bot size={34} />
+        </div>
+        <p className="eyebrow">Live Alerts</p>
+        <h1>Painel de alertas para Discord</h1>
+        <p className="login-copy">
+          Entre com sua conta Discord para configurar alertas de live apenas nos servidores em que voce e administrador.
+        </p>
+        {error ? <div className="toast error">{error}</div> : null}
+        <a className="discord-button" href={authPath("/discord")}>
+          <LogIn size={19} />
+          Entrar com Discord
+        </a>
+      </section>
+    </main>
+  );
 }
 
 function Sidebar({
-  activeView,
-  open,
+  page,
+  user,
+  mobileOpen,
+  onPage,
   onClose,
-  onSelect
+  onLogout
 }: {
-  activeView: ViewId;
-  open: boolean;
+  page: Page;
+  user: AuthUser;
+  mobileOpen: boolean;
+  onPage: (page: Page) => void;
   onClose: () => void;
-  onSelect: (view: ViewId) => void;
+  onLogout: () => void;
 }) {
-  const items: Array<{ id: ViewId; label: string; icon: LucideIcon; badge?: string }> = [
-    { id: "overview", label: "Painel", icon: LayoutDashboard },
-    { id: "login", label: "Login", icon: LockKeyhole },
-    { id: "lives", label: "Lives", icon: RadioTower, badge: "Twitch" },
-    { id: "systems", label: "Sistemas", icon: Server },
-    { id: "security", label: "Acesso", icon: ShieldCheck }
+  const items = [
+    { id: "home" as const, label: "Inicio", icon: LayoutDashboard },
+    { id: "alerts" as const, label: "Alertas de Live", icon: RadioTower },
+    { id: "channels" as const, label: "Canais", icon: Hash },
+    { id: "settings" as const, label: "Configuracoes", icon: Settings }
   ];
 
   return (
     <>
-      <div className={`sidebar-backdrop ${open ? "is-open" : ""}`} onClick={onClose} />
-      <aside className={`sidebar ${open ? "is-open" : ""}`}>
-        <div className="brand-row">
-          <div className="brand-mark">
-            <Bot size={23} />
+      <div className={`sidebar-backdrop ${mobileOpen ? "open" : ""}`} onClick={onClose} />
+      <aside className={`sidebar ${mobileOpen ? "open" : ""}`}>
+        <div className="brand">
+          <div className="brand-icon">
+            <Twitch size={24} />
           </div>
           <div>
-            <p className="eyebrow">Steve Wonder</p>
-            <h1>Command Center</h1>
+            <strong>Live Alerts</strong>
+            <span>Discord bot panel</span>
           </div>
           <button className="icon-button mobile-only" type="button" onClick={onClose} aria-label="Fechar menu">
             <X size={18} />
           </button>
         </div>
 
-        <div className="server-summary">
-          <span>Servidor principal</span>
-          <strong>Comunidade Discord</strong>
-          <small>Operacao em tempo real</small>
-        </div>
-
-        <nav className="nav-list" aria-label="Navegacao principal">
+        <nav className="nav-list">
           {items.map((item) => {
             const Icon = item.icon;
-            const active = item.id === activeView;
-
             return (
               <button
-                className={`nav-item ${active ? "is-active" : ""}`}
+                className={`nav-item ${page === item.id ? "active" : ""}`}
                 key={item.id}
                 type="button"
                 onClick={() => {
-                  onSelect(item.id);
+                  onPage(item.id);
                   onClose();
                 }}
               >
-                <span>
-                  <Icon size={17} />
-                  {item.label}
-                </span>
-                {item.badge ? <b>{item.badge}</b> : <ChevronRight size={16} />}
+                <Icon size={18} />
+                {item.label}
               </button>
             );
           })}
         </nav>
 
-        <div className="sidebar-footer">
-          <Sparkles size={18} />
+        <div className="user-card">
+          <div className="avatar-box">
+            {user.avatar ? <img src={user.avatar} alt="" /> : <Bot size={18} />}
+          </div>
           <div>
-            <strong>Dashboard refeito</strong>
-            <span>Entrada liberada, sessao monitorada e atalhos prontos.</span>
+            <strong>{user.username}</strong>
+            <span>Conta Discord</span>
           </div>
         </div>
+
+        <button className="nav-item logout" type="button" onClick={onLogout}>
+          <LogOut size={18} />
+          Sair
+        </button>
       </aside>
     </>
   );
 }
 
-function Topbar({
-  authUser,
-  sessionMessage,
-  onMenu,
-  onOpenLogin,
-  onLogout
-}: {
-  authUser: AuthUser | null;
-  sessionMessage: string;
-  onMenu: () => void;
-  onOpenLogin: () => void;
-  onLogout: () => void;
-}) {
-  return (
-    <header className="topbar">
-      <div className="topbar-left">
-        <button className="icon-button menu-button" type="button" onClick={onMenu} aria-label="Abrir menu">
-          <Menu size={20} />
-        </button>
-        <div>
-          <p className="eyebrow">Painel do bot</p>
-          <span>{sessionMessage}</span>
-        </div>
-      </div>
-
-      <div className="topbar-actions">
-        <div className="search-shell">
-          <Search size={16} />
-          <input placeholder="Buscar modulo, live ou log" />
-        </div>
-        <button className="icon-button" type="button" aria-label="Notificacoes">
-          <Bell size={17} />
-        </button>
-        {authUser ? (
-          <div className="profile-chip">
-            <div>{authUser.avatar ? <img src={authUser.avatar} alt="" /> : <UserRound size={17} />}</div>
-            <span>
-              <strong>{authUser.username}</strong>
-              <small>Sessao Discord</small>
-            </span>
-            <button className="chip-action" type="button" onClick={onLogout} aria-label="Sair">
-              <LogOut size={15} />
-            </button>
-          </div>
-        ) : (
-          <button className="login-pill" type="button" onClick={onOpenLogin}>
-            <LogIn size={16} />
-            Entrar
-          </button>
-        )}
-      </div>
-    </header>
-  );
-}
-
-function MetricCard({ metric }: { metric: Metric }) {
-  const Icon = metric.icon;
-
-  return (
-    <article className={`metric-card tone-${metric.tone}`}>
-      <div className="metric-icon">
-        <Icon size={20} />
-      </div>
-      <span>{metric.label}</span>
-      <strong>{metric.value}</strong>
-      <small>{metric.detail}</small>
-    </article>
-  );
-}
-
-function Overview({
-  authUser,
-  liveCount,
-  enabledLiveCount,
-  onOpenLives,
-  onOpenSecurity,
-  onOpenSystems,
-  onLogin
-}: {
-  authUser: AuthUser | null;
-  liveCount: number;
-  enabledLiveCount: number;
-  onOpenLives: () => void;
-  onOpenSecurity: () => void;
-  onOpenSystems: () => void;
-  onLogin: () => void;
-}) {
-  const metrics: Metric[] = [
-    { label: "Sessao", value: authUser ? "Conectada" : "Livre", detail: authUser ? "Discord validado" : "Painel liberado", icon: ShieldCheck, tone: "green" },
-    { label: "Lives", value: String(liveCount), detail: `${enabledLiveCount} alertas ativos`, icon: RadioTower, tone: "blue" },
-    { label: "Sistemas", value: "8", detail: "modulos preparados", icon: Gauge, tone: "amber" },
-    { label: "Eventos", value: "24h", detail: "monitoramento continuo", icon: Clock3, tone: "red" }
-  ];
-  const tasks: Array<{ title: string; detail: string; action: string; onClick: () => void }> = [
-    {
-      title: "Lives da Twitch",
-      detail: "Cadastrar canais, ativar alertas e revisar destino no Discord.",
-      action: "Abrir",
-      onClick: onOpenLives
-    },
-    {
-      title: "Login e permissao",
-      detail: "Verificar se o Discord esta autenticado e renovar a sessao.",
-      action: "Entrar",
-      onClick: onLogin
-    },
-    {
-      title: "Sistemas",
-      detail: "Acessar os modulos preparados para o bot e o dashboard.",
-      action: "Abrir",
-      onClick: onOpenSystems
-    },
-    {
-      title: "Acesso",
-      detail: "Conferir o modo liberado e as informacoes da sessao.",
-      action: "Checar",
-      onClick: onOpenSecurity
-    }
-  ];
-
-  return (
-    <>
-      <section className="hero-panel">
-        <div className="hero-copy">
-          <div className="status-pill">
-            <i />
-            Online
-          </div>
-          <h2>Controle completo do Steve Wonder</h2>
-          <p>
-            Gerencie lives, sistemas, acesso e operacao do bot em uma tela direta, sem bloqueio visual quando a
-            sessao Discord estiver instavel.
-          </p>
-          <div className="hero-actions">
-            <button className="primary-action" type="button" onClick={onOpenLives}>
-              <Twitch size={17} />
-              Configurar lives
-            </button>
-            <button className="ghost-action" type="button" onClick={onLogin}>
-              <LogIn size={17} />
-              Vincular Discord
-            </button>
-          </div>
-        </div>
-
-        <div className="visual-panel" aria-hidden="true">
-          <div className="orbit-card">
-            <Bot size={38} />
-            <span>Steve Wonder</span>
-          </div>
-          <div className="signal-row">
-            <i />
-            <i />
-            <i />
-            <i />
-          </div>
-        </div>
-      </section>
-
-      <section className="metrics-grid">
-        {metrics.map((metric) => (
-          <MetricCard key={metric.label} metric={metric} />
-        ))}
-      </section>
-
-      <section className="work-grid">
-        <article className="wide-card">
-          <div className="section-title">
-            <Activity size={20} />
-            <div>
-              <h3>Fluxo principal</h3>
-              <span>Operacoes mais usadas do painel</span>
-            </div>
-          </div>
-          {tasks.map((task) => (
-            <div className="task-row" key={task.title}>
-              <div>
-                <strong>{task.title}</strong>
-                <span>{task.detail}</span>
-              </div>
-              <button className="row-action" type="button" onClick={task.onClick}>{task.action}</button>
-            </div>
-          ))}
-        </article>
-
-        <article className="info-card">
-          <div className="section-title">
-            <Zap size={20} />
-            <div>
-              <h3>Estado</h3>
-              <span>Resumo rapido</span>
-            </div>
-          </div>
-          <div className="health-list">
-            <span><CheckCircle2 size={16} /> Frontend TSX ativo</span>
-            <span><CheckCircle2 size={16} /> Entrada do painel liberada</span>
-            <span><CircleAlert size={16} /> OAuth monitorado</span>
-          </div>
-        </article>
-      </section>
-    </>
-  );
-}
-
-function LoginView({
-  authUser,
-  sessionMessage,
-  onLogin,
-  onLogout,
-  onRefresh
-}: {
-  authUser: AuthUser | null;
-  sessionMessage: string;
-  onLogin: () => void;
-  onLogout: () => void;
-  onRefresh: () => void;
-}) {
-  const steps = [
-    ["1", "Entrar com Discord", "Abre o OAuth oficial e volta para o dashboard."],
-    ["2", "Salvar sessao", "O backend cria o cookie seguro do painel."],
-    ["3", "Liberar dashboard", "A interface atualiza o usuario e habilita os recursos protegidos."]
-  ];
-
-  return (
-    <section className="view-stack">
-      <div className="view-heading">
-        <div>
-          <p className="eyebrow">Login</p>
-          <h2>Acesso ao dashboard</h2>
-          <span>{sessionMessage}</span>
-        </div>
-        <button className="ghost-action" type="button" onClick={onRefresh}>
-          <RefreshCw size={17} />
-          Verificar sessao
-        </button>
-      </div>
-
-      <div className="login-grid">
-        <article className="login-card primary-login-card">
-          <div className="login-badge">
-            {authUser ? <CheckCircle2 size={22} /> : <LockKeyhole size={22} />}
-          </div>
-          <p className="eyebrow">Conta Discord</p>
-          <h3>{authUser ? authUser.username : "Nenhuma sessao ativa"}</h3>
-          <p>
-            {authUser
-              ? "Sua conta Discord foi reconhecida pelo painel. Voce pode sair e entrar novamente quando quiser."
-              : "Entre com Discord para vincular sua conta ao painel. O dashboard permanece visivel mesmo sem login."}
-          </p>
-          <div className="login-actions">
-            <button className="primary-action" type="button" onClick={onLogin}>
-              <LogIn size={17} />
-              Entrar com Discord
-            </button>
-            {authUser ? (
-              <button className="ghost-action" type="button" onClick={onLogout}>
-                <LogOut size={17} />
-                Sair
-              </button>
-            ) : null}
-          </div>
-        </article>
-
-        <article className="login-card">
-          <div className="section-title">
-            <ShieldCheck size={20} />
-            <div>
-              <h3>Sistema de acesso</h3>
-              <span>Fluxo usado pelo dashboard</span>
-            </div>
-          </div>
-          <div className="login-steps">
-            {steps.map(([number, title, detail]) => (
-              <div className="login-step" key={title}>
-                <b>{number}</b>
-                <div>
-                  <strong>{title}</strong>
-                  <span>{detail}</span>
-                </div>
-              </div>
-            ))}
-          </div>
-        </article>
-      </div>
-    </section>
-  );
-}
-
-function LivesView({
-  configs,
+function AlertModal({
+  form,
   channels,
-  loading,
-  error,
-  onRefresh
+  saving,
+  onChange,
+  onClose,
+  onSave
 }: {
-  configs: TwitchConfig[];
-  channels: DiscordAlertChannel[];
-  loading: boolean;
-  error: string;
-  onRefresh: () => void;
+  form: AlertForm;
+  channels: TextChannel[];
+  saving: boolean;
+  onChange: (form: AlertForm) => void;
+  onClose: () => void;
+  onSave: () => void;
 }) {
-  function channelName(id: string) {
-    const channel = channels.find((item) => item.id === id);
-    return channel ? `#${channel.name}` : id || "canal nao definido";
-  }
-
   return (
-    <section className="view-stack">
-      <div className="view-heading">
-        <div>
-          <p className="eyebrow">Social notifications</p>
-          <h2>Lives da Twitch</h2>
-          <span>Cadastros e alertas conectados ao Discord.</span>
+    <div className="modal-layer" role="dialog" aria-modal="true">
+      <section className="modal-card">
+        <div className="modal-header">
+          <div>
+            <p className="eyebrow">Twitch / Lives</p>
+            <h2>{form.id ? "Editar Canal" : "Adicionar Canal"}</h2>
+          </div>
+          <button className="icon-button" type="button" onClick={onClose} aria-label="Fechar modal">
+            <X size={18} />
+          </button>
         </div>
-        <button className="ghost-action" type="button" onClick={onRefresh}>
-          <RefreshCw size={17} />
-          Atualizar
-        </button>
-      </div>
 
-      {error ? <div className="notice-error">{error}</div> : null}
+        <label className="field">
+          <span>URL do canal da live</span>
+          <input
+            placeholder="https://www.twitch.tv/usuario"
+            value={form.streamerUrl}
+            onChange={(event) => onChange({ ...form, streamerUrl: event.target.value })}
+          />
+        </label>
 
-      <div className="live-list">
-        {loading ? (
-          <article className="empty-card">Carregando configuracoes de live...</article>
-        ) : configs.length ? (
-          configs.map((config) => (
-            <article className="live-card" key={config.id}>
-              <div className="live-avatar">
-                {config.twitchAvatarUrl ? <img src={config.twitchAvatarUrl} alt="" /> : <Twitch size={22} />}
-              </div>
-              <div>
-                <strong>@{config.twitchDisplayName || config.twitchChannelName}</strong>
-                <span>{channelName(config.discordChannelId)}</span>
-                <small>Atualizado em {relativeTime(config.updatedAt)}</small>
-              </div>
-              <b className={config.enabled ? "is-enabled" : ""}>{config.enabled ? "Ativo" : "Pausado"}</b>
-            </article>
-          ))
-        ) : (
-          <article className="empty-card">
-            Nenhum canal Twitch cadastrado ainda. Use as rotas do backend ou conecte o Discord para administrar os
-            alertas.
-          </article>
-        )}
-      </div>
-    </section>
-  );
-}
+        <label className="field">
+          <span>Canal de texto do Discord</span>
+          <select
+            value={form.textChannelId}
+            onChange={(event) => onChange({ ...form, textChannelId: event.target.value })}
+          >
+            <option value="">Selecione um canal</option>
+            {channels.map((channel) => (
+              <option key={channel.id} value={channel.id}>
+                #{channel.name}
+              </option>
+            ))}
+          </select>
+        </label>
 
-function SystemsView() {
-  const systems = [
-    ["Boas-vindas", "Mensagens e GIF de entrada", "Pronto"],
-    ["Logs", "Eventos de servidor e auditoria", "Ativo"],
-    ["Economia", "Comandos de saldo e perfil", "Base"],
-    ["Tempo real", "Acoes via socket para o bot", "Preparado"]
-  ];
+        <label className="field">
+          <span>Mensagem personalizada do alerta</span>
+          <textarea
+            rows={5}
+            value={form.customMessage}
+            onChange={(event) => onChange({ ...form, customMessage: event.target.value })}
+          />
+        </label>
 
-  return (
-    <section className="view-stack">
-      <div className="view-heading">
-        <div>
-          <p className="eyebrow">Modulos</p>
-          <h2>Sistemas do bot</h2>
-          <span>Mapa operacional para evoluir o painel.</span>
+        <label className="toggle-row">
+          <input
+            type="checkbox"
+            checked={form.enabled}
+            onChange={(event) => onChange({ ...form, enabled: event.target.checked })}
+          />
+          <span>Status ativado</span>
+        </label>
+
+        <div className="modal-actions">
+          <button className="secondary-button" type="button" onClick={onClose}>
+            Cancelar
+          </button>
+          <button className="primary-button" type="button" onClick={onSave} disabled={saving}>
+            {saving ? <Loader2 className="spin" size={18} /> : <Save size={18} />}
+            Salvar
+          </button>
         </div>
-      </div>
-      <div className="system-grid">
-        {systems.map(([title, detail, state]) => (
-          <article className="system-card" key={title}>
-            <Server size={21} />
-            <strong>{title}</strong>
-            <span>{detail}</span>
-            <b>{state}</b>
-          </article>
-        ))}
-      </div>
-    </section>
-  );
-}
-
-function SecurityView({ authUser, sessionMessage }: { authUser: AuthUser | null; sessionMessage: string }) {
-  return (
-    <section className="view-stack">
-      <div className="view-heading">
-        <div>
-          <p className="eyebrow">Acesso</p>
-          <h2>Sessao e permissao</h2>
-          <span>{sessionMessage}</span>
-        </div>
-      </div>
-      <div className="security-card">
-        <ShieldCheck size={28} />
-        <div>
-          <strong>{authUser ? `Logado como ${authUser.username}` : "Painel em modo livre"}</strong>
-          <p>
-            O dashboard nao bloqueia mais a interface quando o OAuth nao retorna sessao. O login Discord continua
-            disponivel para recursos protegidos do backend.
-          </p>
-        </div>
-        <a className="primary-action" href={authPath("/discord")}>
-          <LogIn size={17} />
-          Entrar com Discord
-        </a>
-      </div>
-    </section>
+      </section>
+    </div>
   );
 }
 
 export default function App() {
-  const [activeView, setActiveView] = useState<ViewId>("overview");
-  const [sidebarOpen, setSidebarOpen] = useState(false);
-  const [authUser, setAuthUser] = useState<AuthUser | null>(null);
-  const [sessionMessage, setSessionMessage] = useState("Painel liberado");
-  const [configs, setConfigs] = useState<TwitchConfig[]>([]);
-  const [channels, setChannels] = useState<DiscordAlertChannel[]>([]);
-  const [liveLoading, setLiveLoading] = useState(true);
-  const [liveError, setLiveError] = useState("");
+  const [user, setUser] = useState<AuthUser | null>(null);
+  const [guilds, setGuilds] = useState<Guild[]>([]);
+  const [selectedGuildId, setSelectedGuildId] = useState("");
+  const [channels, setChannels] = useState<TextChannel[]>([]);
+  const [alerts, setAlerts] = useState<LiveAlert[]>([]);
+  const [page, setPage] = useState<Page>("home");
+  const [loading, setLoading] = useState(true);
+  const [saving, setSaving] = useState(false);
+  const [mobileOpen, setMobileOpen] = useState(false);
+  const [modalOpen, setModalOpen] = useState(false);
+  const [form, setForm] = useState<AlertForm>({
+    streamerUrl: "",
+    textChannelId: "",
+    customMessage: defaultMessage,
+    enabled: true
+  });
+  const [message, setMessage] = useState("");
+  const [error, setError] = useState("");
 
-  const enabledLiveCount = useMemo(() => configs.filter((config) => config.enabled).length, [configs]);
+  const selectedGuild = useMemo(
+    () => guilds.find((guild) => guild.id === selectedGuildId) || null,
+    [guilds, selectedGuildId]
+  );
+
+  const activeAlerts = useMemo(() => alerts.filter((alert) => alert.enabled).length, [alerts]);
 
   async function loadSession() {
+    setLoading(true);
+    setError("");
+
     try {
-      const data = await requestJson<{ user: AuthUser }>("/api/auth/me", { cache: "no-store" });
-      setAuthUser(data.user);
-      setSessionMessage(`Sessao ativa para ${data.user.username}`);
-    } catch (error) {
-      setAuthUser(null);
-      setSessionMessage(error instanceof Error ? error.message : "Painel liberado sem sessao Discord");
+      const session = await apiJson<{ user: AuthUser }>("/api/auth/me", { cache: "no-store" });
+      setUser(session.user);
+      const guildData = await apiJson<{ guilds: Guild[] }>("/api/lives/guilds", { cache: "no-store" });
+      setGuilds(guildData.guilds);
+      setSelectedGuildId((current) => current || guildData.guilds[0]?.id || "");
+    } catch (err) {
+      setUser(null);
+      setError(err instanceof Error ? err.message : "Login Discord obrigatorio.");
+    } finally {
+      setLoading(false);
     }
   }
 
-  async function loadLives() {
-    setLiveLoading(true);
-    setLiveError("");
+  async function loadGuildData(guildId: string) {
+    if (!guildId) {
+      setChannels([]);
+      setAlerts([]);
+      return;
+    }
+
+    setError("");
 
     try {
-      const [liveData, channelData] = await Promise.all([
-        requestJson<{ twitch: TwitchConfig[] }>("/api/lives"),
-        requestJson<{ channels: DiscordAlertChannel[] }>("/api/lives/channels")
+      const [channelData, alertData] = await Promise.all([
+        apiJson<{ channels: TextChannel[] }>(`/api/lives/guilds/${guildId}/channels`, { cache: "no-store" }),
+        apiJson<{ alerts: LiveAlert[] }>(`/api/lives?guildId=${guildId}`, { cache: "no-store" })
       ]);
-      setConfigs(liveData.twitch || []);
-      setChannels(channelData.channels || []);
-    } catch (error) {
-      setLiveError(error instanceof Error ? error.message : "Nao foi possivel carregar as lives.");
-    } finally {
-      setLiveLoading(false);
+      setChannels(channelData.channels);
+      setAlerts(alertData.alerts);
+    } catch (err) {
+      setError(err instanceof Error ? err.message : "Nao foi possivel carregar o servidor.");
     }
   }
 
   useEffect(() => {
     loadSession();
-    loadLives();
   }, []);
+
+  useEffect(() => {
+    if (user) {
+      loadGuildData(selectedGuildId);
+    }
+  }, [selectedGuildId, user]);
+
+  function openCreateModal() {
+    setForm({
+      streamerUrl: "",
+      textChannelId: channels[0]?.id || "",
+      customMessage: defaultMessage,
+      enabled: true
+    });
+    setModalOpen(true);
+  }
+
+  function openEditModal(alert: LiveAlert) {
+    setForm({
+      id: alert.id,
+      streamerUrl: alert.streamerUrl,
+      textChannelId: alert.textChannelId,
+      customMessage: alert.customMessage,
+      enabled: alert.enabled
+    });
+    setModalOpen(true);
+  }
+
+  async function saveAlert() {
+    if (!selectedGuildId) {
+      setError("Selecione um servidor para configurar o alerta.");
+      return;
+    }
+
+    setSaving(true);
+    setError("");
+    setMessage("");
+
+    try {
+      const body = JSON.stringify({
+        guildId: selectedGuildId,
+        streamerUrl: form.streamerUrl,
+        textChannelId: form.textChannelId,
+        customMessage: form.customMessage,
+        enabled: form.enabled
+      });
+      const path = form.id ? `/api/lives/twitch/${form.id}` : "/api/lives/twitch";
+      const method = form.id ? "PUT" : "POST";
+      await apiJson(path, { method, body });
+      await loadGuildData(selectedGuildId);
+      setModalOpen(false);
+      setMessage(form.id ? "Alerta atualizado com sucesso." : "Canal adicionado com sucesso.");
+    } catch (err) {
+      setError(err instanceof Error ? err.message : "Nao foi possivel salvar o alerta.");
+    } finally {
+      setSaving(false);
+    }
+  }
+
+  async function toggleAlert(alert: LiveAlert) {
+    setError("");
+    await apiJson(`/api/lives/twitch/${alert.id}/toggle`, {
+      method: "PATCH",
+      body: JSON.stringify({ enabled: !alert.enabled })
+    })
+      .then(() => loadGuildData(selectedGuildId))
+      .catch((err) => setError(err instanceof Error ? err.message : "Nao foi possivel alterar o status."));
+  }
+
+  async function deleteAlert(alert: LiveAlert) {
+    setError("");
+    await apiJson(`/api/lives/twitch/${alert.id}`, { method: "DELETE" })
+      .then(() => {
+        setMessage("Alerta excluido com sucesso.");
+        return loadGuildData(selectedGuildId);
+      })
+      .catch((err) => setError(err instanceof Error ? err.message : "Nao foi possivel excluir o alerta."));
+  }
 
   async function logout() {
     await fetch(authPath("/logout"), { method: "POST", credentials: "include" }).catch(() => null);
-    setAuthUser(null);
-    setSessionMessage("Painel liberado");
+    setUser(null);
+  }
+
+  if (loading) {
+    return (
+      <main className="loading-screen">
+        <Loader2 className="spin" size={30} />
+      </main>
+    );
+  }
+
+  if (!user) {
+    return <LoginScreen error={error} />;
   }
 
   return (
     <main className="app-shell">
       <Sidebar
-        activeView={activeView}
-        open={sidebarOpen}
-        onClose={() => setSidebarOpen(false)}
-        onSelect={setActiveView}
+        page={page}
+        user={user}
+        mobileOpen={mobileOpen}
+        onPage={setPage}
+        onClose={() => setMobileOpen(false)}
+        onLogout={logout}
       />
-      <section className="main-panel">
-        <Topbar
-          authUser={authUser}
-          sessionMessage={sessionMessage}
-          onMenu={() => setSidebarOpen(true)}
-          onOpenLogin={() => setActiveView("login")}
-          onLogout={logout}
-        />
+
+      <section className="dashboard-shell">
+        <header className="topbar">
+          <button className="icon-button menu-button" type="button" onClick={() => setMobileOpen(true)} aria-label="Abrir menu">
+            <Menu size={20} />
+          </button>
+          <div>
+            <p className="eyebrow">Dashboard</p>
+            <h1>{page === "alerts" ? "Alertas de Live" : "Painel de Controle"}</h1>
+          </div>
+          <div className="topbar-right">
+            <Bell size={18} />
+            <select value={selectedGuildId} onChange={(event) => setSelectedGuildId(event.target.value)}>
+              {guilds.length ? (
+                guilds.map((guild) => (
+                  <option key={guild.id} value={guild.id}>
+                    {guild.name}
+                  </option>
+                ))
+              ) : (
+                <option value="">Nenhum servidor admin</option>
+              )}
+            </select>
+          </div>
+        </header>
+
         <div className="content">
-          {activeView === "overview" ? (
-            <Overview
-              authUser={authUser}
-              liveCount={configs.length}
-              enabledLiveCount={enabledLiveCount}
-              onOpenLives={() => setActiveView("lives")}
-              onOpenSecurity={() => setActiveView("security")}
-              onOpenSystems={() => setActiveView("systems")}
-              onLogin={() => {
-                setActiveView("login");
-              }}
-            />
+          {error ? <div className="toast error">{error}</div> : null}
+          {message ? <div className="toast success">{message}</div> : null}
+
+          {page === "home" ? (
+            <>
+              <section className="stats-grid">
+                <article className="stat-card">
+                  <RadioTower size={22} />
+                  <span>Alertas cadastrados</span>
+                  <strong>{alerts.length}</strong>
+                </article>
+                <article className="stat-card">
+                  <CheckCircle2 size={22} />
+                  <span>Alertas ativos</span>
+                  <strong>{activeAlerts}</strong>
+                </article>
+                <article className="stat-card">
+                  <Server size={22} />
+                  <span>Servidores admin</span>
+                  <strong>{guilds.length}</strong>
+                </article>
+              </section>
+
+              <section className="hero-band">
+                <div>
+                  <p className="eyebrow">Servidor selecionado</p>
+                  <h2>{selectedGuild?.name || "Selecione um servidor"}</h2>
+                  <span>Configure alertas da Twitch com envio automatico em canais de texto do Discord.</span>
+                </div>
+                <button className="primary-button" type="button" onClick={() => setPage("alerts")}>
+                  <RadioTower size={18} />
+                  Abrir alertas
+                </button>
+              </section>
+            </>
           ) : null}
-          {activeView === "login" ? (
-            <LoginView
-              authUser={authUser}
-              sessionMessage={sessionMessage}
-              onLogin={() => {
-                window.location.href = authPath("/discord");
-              }}
-              onLogout={logout}
-              onRefresh={loadSession}
-            />
+
+          {page === "alerts" ? (
+            <section className="panel-card">
+              <div className="panel-header">
+                <div>
+                  <p className="eyebrow">Twitch / Lives</p>
+                  <h2>Canais cadastrados</h2>
+                </div>
+                <button className="primary-button" type="button" onClick={openCreateModal} disabled={!selectedGuildId || !channels.length}>
+                  <Plus size={18} />
+                  Adicionar Canal
+                </button>
+              </div>
+
+              <div className="table-list">
+                {alerts.length ? (
+                  alerts.map((alert) => {
+                    const channel = channels.find((item) => item.id === alert.textChannelId);
+
+                    return (
+                      <article className="alert-row" key={alert.id}>
+                        <div className="streamer-cell">
+                          <div className="avatar-box">
+                            {alert.twitchAvatarUrl ? <img src={alert.twitchAvatarUrl} alt="" /> : <Twitch size={18} />}
+                          </div>
+                          <div>
+                            <strong>{alert.streamerName}</strong>
+                            <span>{alert.streamerUrl}</span>
+                          </div>
+                        </div>
+                        <div className="muted-cell">#{channel?.name || alert.textChannelId}</div>
+                        <button className={`status-pill ${alert.enabled ? "on" : ""}`} type="button" onClick={() => toggleAlert(alert)}>
+                          {alert.enabled ? "Ativado" : "Desativado"}
+                        </button>
+                        <div className="row-actions">
+                          <button className="icon-button" type="button" onClick={() => openEditModal(alert)} aria-label="Editar">
+                            <Pencil size={17} />
+                          </button>
+                          <button className="icon-button danger" type="button" onClick={() => deleteAlert(alert)} aria-label="Excluir">
+                            <Trash2 size={17} />
+                          </button>
+                        </div>
+                        <small>Atualizado {formatDate(alert.updatedAt)}</small>
+                      </article>
+                    );
+                  })
+                ) : (
+                  <div className="empty-state">
+                    <Twitch size={28} />
+                    <strong>Nenhum canal cadastrado</strong>
+                    <span>Adicione um canal da Twitch para o bot enviar o alerta quando a live comecar.</span>
+                  </div>
+                )}
+              </div>
+            </section>
           ) : null}
-          {activeView === "lives" ? (
-            <LivesView configs={configs} channels={channels} loading={liveLoading} error={liveError} onRefresh={loadLives} />
+
+          {page === "channels" ? (
+            <section className="panel-card">
+              <div className="panel-header">
+                <div>
+                  <p className="eyebrow">Canais</p>
+                  <h2>Canais de texto disponiveis</h2>
+                </div>
+              </div>
+              <div className="channel-grid">
+                {channels.map((channel) => (
+                  <article className="channel-card" key={channel.id}>
+                    <Hash size={18} />
+                    <strong>{channel.name}</strong>
+                    <span>{channel.id}</span>
+                  </article>
+                ))}
+              </div>
+            </section>
           ) : null}
-          {activeView === "systems" ? <SystemsView /> : null}
-          {activeView === "security" ? <SecurityView authUser={authUser} sessionMessage={sessionMessage} /> : null}
+
+          {page === "settings" ? (
+            <section className="panel-card settings-card">
+              <Settings size={28} />
+              <div>
+                <p className="eyebrow">Configuracoes</p>
+                <h2>Permissoes protegidas</h2>
+                <span>
+                  O painel lista somente servidores onde sua conta Discord possui permissao de administrador. As rotas
+                  do backend validam essa permissao novamente antes de salvar qualquer alerta.
+                </span>
+              </div>
+            </section>
+          ) : null}
         </div>
       </section>
+
+      {modalOpen ? (
+        <AlertModal
+          form={form}
+          channels={channels}
+          saving={saving}
+          onChange={setForm}
+          onClose={() => setModalOpen(false)}
+          onSave={saveAlert}
+        />
+      ) : null}
     </main>
   );
 }

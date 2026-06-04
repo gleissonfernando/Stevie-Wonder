@@ -9,7 +9,7 @@ export const env = {
   discordToken: process.env.DISCORD_BOT_TOKEN || process.env.DISCORD_TOKEN || "",
   clientId: process.env.CLIENT_ID || "",
   clientSecret: process.env.DISCORD_CLIENT_SECRET || "",
-  discordOauthScopes: process.env.DISCORD_OAUTH_SCOPES || "identify",
+  discordOauthScopes: process.env.DISCORD_OAUTH_SCOPES || "identify guilds",
   redirectUri: process.env.DISCORD_REDIRECT_URI || `${siteUrl}/api/auth/discord/callback`,
   guildId: process.env.GUILD_ID || "",
   requireGuildMember: process.env.REQUIRE_GUILD_MEMBER === "true",

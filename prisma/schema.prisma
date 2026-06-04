@@ -74,3 +74,27 @@ model Notification {
   @@index([read])
   @@index([createdAt])
 }
+
+model LiveAlertConfig {
+  id                String   @id @default(cuid())
+  userIdDiscord     String   @map("user_id_discord")
+  guildId           String   @map("guild_id")
+  streamerUrl       String   @map("streamer_url")
+  streamerName      String   @map("streamer_name")
+  twitchUserId      String?  @map("twitch_user_id")
+  twitchAvatarUrl   String?  @map("twitch_avatar_url")
+  textChannelId     String   @map("text_channel_id")
+  customMessage     String   @map("custom_message")
+  enabled           Boolean  @default(true)
+  lastStreamId      String?  @map("last_stream_id")
+  lastLiveStartedAt DateTime? @map("last_live_started_at")
+  lastAlertSentAt   DateTime? @map("last_alert_sent_at")
+  createdAt         DateTime @default(now()) @map("created_at")
+  updatedAt         DateTime @updatedAt @map("updated_at")
+
+  @@unique([guildId, streamerName])
+  @@index([userIdDiscord])
+  @@index([guildId])
+  @@index([enabled])
+  @@map("live_alert_configs")
+}

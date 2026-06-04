@@ -106,6 +106,25 @@ export async function assertCanManageLives(userId: string, guildId = env.guildId
   return true;
 }
 
+export function hasAdministratorPermission(permissions?: string, owner?: boolean) {
+  if (owner) return true;
+  const permissionBits = BigInt(permissions || "0");
+  return (permissionBits & PermissionFlagsBits.Administrator) === PermissionFlagsBits.Administrator;
+}
+
+export async function assertCanManageGuild(userId: string, guildId: string) {
+  if (env.authorizedUserIds.includes(userId)) return true;
+
+  const [guild, member] = await Promise.all([fetchGuild(guildId), fetchGuildMember(userId, guildId)]);
+  const isOwner = guild.owner_id === userId;
+
+  if (!hasAdministratorPermission(member.permissions, isOwner)) {
+    throw new Error("Voce precisa ser administrador deste servidor para configurar alertas.");
+  }
+
+  return true;
+}
+
 export async function validateDiscordAlertChannel(channelId: string, guildId = env.guildId, mentionRoleId?: string) {
   const channel = (await rest.get(Routes.channel(channelId))) as DiscordChannel;
 

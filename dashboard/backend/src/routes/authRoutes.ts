@@ -71,7 +71,8 @@ authRoutes.get("/discord", (request, response) => {
 });
 
 authRoutes.get("/me", requireAuth, (request, response) => {
-  response.json({ user: request.user });
+  const { accessToken: _accessToken, ...user } = request.user!;
+  response.json({ user });
 });
 
 authRoutes.get("/discord/callback", async (request, response, next) => {
@@ -94,7 +95,8 @@ authRoutes.get("/discord/callback", async (request, response, next) => {
     const user = {
       id: discordUser.id,
       username: discordUser.global_name || discordUser.username,
-      avatar: discordAvatarUrl(discordUser)
+      avatar: discordAvatarUrl(discordUser),
+      accessToken: token.access_token
     };
 
     response.cookie(env.cookieName, signSession(user), sessionCookieOptions(request));
