@@ -19,6 +19,7 @@ import {
   Twitch,
   X
 } from "lucide-react";
+import type { ReactNode } from "react";
 import { useEffect, useMemo, useState } from "react";
 
 type Page = "home" | "alerts" | "subs" | "channels" | "settings";
@@ -305,6 +306,60 @@ function AlertModal({
         </div>
       </section>
     </div>
+  );
+}
+
+function ConfigCard({
+  icon: Icon,
+  title,
+  description,
+  action,
+  badge,
+  onClick
+}: {
+  icon: typeof Settings;
+  title: string;
+  description: string;
+  action: string;
+  badge?: string;
+  onClick: () => void;
+}) {
+  return (
+    <article className="config-row-card">
+      <div className="config-row-icon">
+        <Icon size={20} />
+      </div>
+      <div className="config-row-copy">
+        <div>
+          <h3>{title}</h3>
+          {badge ? <span className="tiny-badge">{badge}</span> : null}
+        </div>
+        <p>{description}</p>
+      </div>
+      <button className="small-card-button" type="button" onClick={onClick}>
+        {action}
+      </button>
+    </article>
+  );
+}
+
+function CategorySection({
+  title,
+  description,
+  children
+}: {
+  title: string;
+  description: string;
+  children: ReactNode;
+}) {
+  return (
+    <section className="category-section">
+      <div className="category-heading">
+        <p className="eyebrow">{title}</p>
+        <span>{description}</span>
+      </div>
+      <div className="config-card-list">{children}</div>
+    </section>
   );
 }
 
@@ -737,12 +792,20 @@ export default function App() {
           <button className="icon-button menu-button" type="button" onClick={() => setMobileOpen(true)} aria-label="Abrir menu">
             <Menu size={20} />
           </button>
-          <div>
+          <div className="topbar-title">
+            <div className="topbar-logo">
+              <Bot size={19} />
+            </div>
+            <div>
             <p className="eyebrow">Dashboard</p>
             <h1>{page === "alerts" ? "Alertas de Live" : page === "subs" ? "Subs Twitch" : "Painel de Controle"}</h1>
+            </div>
           </div>
           <div className="topbar-right">
-            <Bell size={18} />
+            <button className="icon-button notification-button" type="button" aria-label="Notificacoes">
+              <Bell size={18} />
+              <span />
+            </button>
             <select value={selectedGuildId} onChange={(event) => setSelectedGuildId(event.target.value)}>
               {guilds.length ? (
                 guilds.map((guild) => (
@@ -754,6 +817,15 @@ export default function App() {
                 <option value="">Nenhum servidor admin</option>
               )}
             </select>
+            <div className="top-profile">
+              <div className="avatar-box compact-avatar">
+                {user.avatar ? <img src={user.avatar} alt="" /> : <Bot size={16} />}
+              </div>
+              <div>
+                <strong>{user.username}</strong>
+                <span>Perfil Discord</span>
+              </div>
+            </div>
           </div>
         </header>
 
@@ -763,6 +835,14 @@ export default function App() {
 
           {page === "home" ? (
             <>
+              <section className="page-intro fade-in">
+                <div>
+                  <p className="eyebrow">Painel administrativo</p>
+                  <h2>{selectedGuild?.name || "Dashboard do bot"}</h2>
+                  <span>Gerencie módulos, permissões, logs e integrações em uma estrutura pronta para crescer.</span>
+                </div>
+              </section>
+
               <section className="stats-grid">
                 <article className="stat-card">
                   <RadioTower size={22} />
@@ -786,21 +866,62 @@ export default function App() {
                 </article>
               </section>
 
-              <section className="hero-band">
-                <div>
-                  <p className="eyebrow">Servidor selecionado</p>
-                  <h2>{selectedGuild?.name || "Selecione um servidor"}</h2>
-                  <span>Configure alertas da Twitch com envio automatico em canais de texto do Discord.</span>
-                </div>
-                <button className="primary-button" type="button" onClick={() => setPage("alerts")}>
-                  <RadioTower size={18} />
-                  Abrir alertas
-                </button>
-                <button className="secondary-button" type="button" onClick={() => setPage("subs")}>
-                  <Twitch size={18} />
-                  Subs Twitch
-                </button>
-              </section>
+              <CategorySection title="Configuracoes" description="Ajustes principais do painel e integrações ativas.">
+                <ConfigCard
+                  icon={RadioTower}
+                  title="Alertas de live"
+                  description="Cadastre canais, escolha destinos e controle os avisos enviados pelo bot."
+                  action="Abrir"
+                  badge={`${alerts.length} item(ns)`}
+                  onClick={() => setPage("alerts")}
+                />
+                <ConfigCard
+                  icon={Twitch}
+                  title="Subs Twitch"
+                  description="Configure cargos por tier, vinculos Twitch e verificacao automatica de inscritos."
+                  action="Configurar"
+                  badge={`${subStats.filter((item) => item.active).reduce((total, item) => total + item._count._all, 0)} ativo(s)`}
+                  onClick={() => setPage("subs")}
+                />
+              </CategorySection>
+
+              <CategorySection title="Permissoes" description="Controle de servidores, canais e acesso administrativo.">
+                <ConfigCard
+                  icon={Server}
+                  title="Servidores conectados"
+                  description="Selecione o servidor que sera administrado e valide as permissões disponíveis."
+                  action="Ver"
+                  badge={`${guilds.length} servidor(es)`}
+                  onClick={() => setPage("settings")}
+                />
+                <ConfigCard
+                  icon={Hash}
+                  title="Canais de texto"
+                  description="Confira canais elegíveis para alertas, logs e mensagens automáticas."
+                  action="Listar"
+                  badge={`${channels.length} canal(is)`}
+                  onClick={() => setPage("channels")}
+                />
+              </CategorySection>
+
+              <CategorySection title="Modulos" description="Espacos preparados para futuras funções do bot.">
+                <ConfigCard
+                  icon={Settings}
+                  title="Personalizacao"
+                  description="Area reservada para identidade visual, mensagens e comportamento do painel."
+                  action="Preparado"
+                  badge="Em breve"
+                  onClick={() => setPage("settings")}
+                />
+                <ConfigCard
+                  icon={Bell}
+                  title="Logs e auditoria"
+                  description="Historico de vinculos, sincronizacoes, erros e ações importantes do sistema."
+                  action="Abrir"
+                  badge={`${subLogs.length} log(s)`}
+                  onClick={() => setPage("subs")}
+                />
+              </CategorySection>
             </>
           ) : null}
 
