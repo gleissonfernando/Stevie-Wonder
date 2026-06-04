@@ -753,7 +753,7 @@ export default function App() {
   useEffect(() => {
     let mounted = true;
 
-    fetch(authPath("/me"), { credentials: "include" })
+    fetch(authPath("/me"), { credentials: "include", cache: "no-store" })
       .then(async (response) => {
         if (!response.ok) return null;
         return response.json() as Promise<{ user: AuthUser }>;
