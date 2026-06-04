@@ -10,7 +10,13 @@
     <title>Live Alerts Dashboard</title>
   </head>
   <body>
-    <div id="root"></div>
+    <div id="root">
+      <main class="loading-screen">
+        <div class="boot-spinner" aria-hidden="true"></div>
+        <span class="loading-text">Carregando dashboard...</span>
+        <noscript>Ative o JavaScript para acessar o dashboard.</noscript>
+      </main>
+    </div>
     <script type="module" src="/src/main.tsx"></script>
   </body>
 </html>

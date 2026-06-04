@@ -60,6 +60,15 @@ button:disabled {
   font-weight: 750;
 }
 
+.boot-spinner {
+  width: 30px;
+  height: 30px;
+  border: 3px solid #333333;
+  border-top-color: #f5f5f5;
+  border-radius: 999px;
+  animation: spin 0.85s linear infinite;
+}
+
 .login-panel {
   width: min(100%, 460px);
   padding: 34px;
