@@ -76,18 +76,6 @@ function serializeAlert(alert: any) {
   };
 }
 
-function valueOrDefault(value: string | null | undefined, fallback: string) {
-  const normalized = value?.trim();
-  return normalized || fallback;
-}
-
-function renderAlertTemplate(template: string, values: Record<string, string>) {
-  return Object.entries(values).reduce(
-    (message, [key, value]) => message.replaceAll(`{${key}}`, value),
-    template
-  );
-}
-
 function normalizeColor(value?: string | null) {
   const color = value || LIVE_ALERT_DEFAULTS.embedColor;
   return color.startsWith("#") ? color.toUpperCase() : `#${color.toUpperCase()}`;
@@ -125,46 +113,27 @@ function buildLiveAlertBody(alert: any, stream: any) {
     hour: "2-digit",
     minute: "2-digit"
   }).format(alertedAt);
-  const templateValues = {
-    streamer: streamerName,
-    url,
-    title: liveTitle,
-    category,
-    viewers,
-    login: fallbackLogin || streamerName
-  };
-  const roleMention = alert.mentionRoleId ? `<@&${alert.mentionRoleId}> ` : "";
-  const message = `${roleMention}${renderAlertTemplate(
-    valueOrDefault(alert.customMessage || alert.alertMessage, LIVE_ALERT_DEFAULTS.customMessage),
-    templateValues
-  )}`.trim();
-  const embedTitle = renderAlertTemplate(valueOrDefault(alert.embedTitle, LIVE_ALERT_DEFAULTS.embedTitle), templateValues);
-  const description = renderAlertTemplate(
-    valueOrDefault(alert.embedDescription, LIVE_ALERT_DEFAULTS.embedDescription),
-    templateValues
-  );
-  const thumbnailUrl = alert.thumbnailUrl || alert.bannerUrl || alert.twitchAvatarUrl || "";
+  const login = fallbackLogin || streamerName;
   const imageUrl = streamThumbnail(stream.thumbnail_url);
 
   return {
-    content: message,
-    allowed_mentions: { parse: ["everyone", "roles", "users"] },
+    content: LIVE_ALERT_DEFAULTS.customMessage,
+    allowed_mentions: { parse: ["everyone"] },
     embeds: [
       {
-        color: colorToDiscordInt(alert.embedColor),
+        color: colorToDiscordInt(LIVE_ALERT_DEFAULTS.embedColor),
         author: {
-          name: embedTitle,
+          name: `${streamerName} is now live on Twitch!`,
           icon_url: alert.twitchAvatarUrl || undefined
         },
-        description,
+        description: `@${login} ${liveTitle}`,
         fields: [
           { name: "Game", value: category, inline: true },
           { name: "Viewers", value: viewers, inline: true }
         ],
-        thumbnail: thumbnailUrl ? { url: thumbnailUrl } : undefined,
         image: imageUrl ? { url: imageUrl } : undefined,
         footer: {
-          text: `${fallbackLogin || streamerName} lives - Hoje às ${alertTime} - ${alertDateTime}`
+          text: `${login} lives - Hoje às ${alertTime} - ${alertDateTime}`
         },
         timestamp: alertedAt.toISOString(),
         url
@@ -177,7 +146,7 @@ function buildLiveAlertBody(alert: any, stream: any) {
           {
             type: 2,
             style: 5,
-            label: alert.buttonLabel || LIVE_ALERT_DEFAULTS.buttonLabel,
+            label: LIVE_ALERT_DEFAULTS.buttonLabel,
             url
           }
         ]
@@ -269,19 +238,22 @@ async function sendLiveAlertIfNeeded(alert: any) {
   }
 
   const textChannelId = alert.textChannelId || alert.discordChannelId;
-  await validateDiscordAlertChannel(textChannelId, alert.guildId, alert.mentionRoleId || undefined);
+  await validateDiscordAlertChannel(textChannelId, alert.guildId);
   await sendDiscordChannelMessage(textChannelId, buildLiveAlertBody(alert, live));
 
   const updated = await TwitchLiveConfig.findByIdAndUpdate(
     alert._id || alert.id,
     {
       $set: {
-        alertMessage: valueOrDefault(alert.alertMessage || alert.customMessage, LIVE_ALERT_DEFAULTS.customMessage),
-        customMessage: valueOrDefault(alert.customMessage || alert.alertMessage, LIVE_ALERT_DEFAULTS.customMessage),
-        embedTitle: valueOrDefault(alert.embedTitle, LIVE_ALERT_DEFAULTS.embedTitle),
-        embedDescription: valueOrDefault(alert.embedDescription, LIVE_ALERT_DEFAULTS.embedDescription),
-        embedColor: normalizeColor(alert.embedColor),
-        buttonLabel: valueOrDefault(alert.buttonLabel, LIVE_ALERT_DEFAULTS.buttonLabel),
+        mentionRoleId: null,
+        alertMessage: LIVE_ALERT_DEFAULTS.customMessage,
+        customMessage: LIVE_ALERT_DEFAULTS.customMessage,
+        embedTitle: LIVE_ALERT_DEFAULTS.embedTitle,
+        embedDescription: LIVE_ALERT_DEFAULTS.embedDescription,
+        embedColor: LIVE_ALERT_DEFAULTS.embedColor,
+        thumbnailUrl: null,
+        bannerUrl: null,
+        buttonLabel: LIVE_ALERT_DEFAULTS.buttonLabel,
         lastStreamId: live.id,
         lastLiveId: live.id,
         lastLiveStartedAt: new Date(live.started_at),
@@ -359,7 +331,7 @@ socialLiveRoutes.post("/twitch", requireAuth, async (request, response, next) =>
   try {
     const payload = alertSchema.parse(request.body);
     await assertCanManageGuild(request.user!.id, payload.guildId);
-    await validateDiscordAlertChannel(payload.textChannelId, payload.guildId, payload.mentionRoleId || undefined);
+    await validateDiscordAlertChannel(payload.textChannelId, payload.guildId);
 
     const login = extractTwitchLogin(payload.streamerUrl);
     if (!login) {
@@ -376,7 +348,6 @@ socialLiveRoutes.post("/twitch", requireAuth, async (request, response, next) =>
     }
 
     await connectMongo();
-    const savedCustomMessage = valueOrDefault(payload.customMessage, LIVE_ALERT_DEFAULTS.customMessage);
     const alert = await TwitchLiveConfig.create({
       guildId: payload.guildId,
       platform: "twitch",
@@ -386,15 +357,15 @@ socialLiveRoutes.post("/twitch", requireAuth, async (request, response, next) =>
       twitchUserId: channel.id,
       twitchAvatarUrl: channel.profile_image_url,
       discordChannelId: payload.textChannelId,
-      mentionRoleId: payload.mentionRoleId || null,
-      alertMessage: savedCustomMessage,
-      customMessage: savedCustomMessage,
-      embedTitle: valueOrDefault(payload.embedTitle, LIVE_ALERT_DEFAULTS.embedTitle),
-      embedDescription: valueOrDefault(payload.embedDescription, LIVE_ALERT_DEFAULTS.embedDescription),
-      embedColor: normalizeColor(payload.embedColor),
-      thumbnailUrl: payload.thumbnailUrl || null,
-      bannerUrl: payload.thumbnailUrl || null,
-      buttonLabel: valueOrDefault(payload.buttonLabel, LIVE_ALERT_DEFAULTS.buttonLabel),
+      mentionRoleId: null,
+      alertMessage: LIVE_ALERT_DEFAULTS.customMessage,
+      customMessage: LIVE_ALERT_DEFAULTS.customMessage,
+      embedTitle: LIVE_ALERT_DEFAULTS.embedTitle,
+      embedDescription: LIVE_ALERT_DEFAULTS.embedDescription,
+      embedColor: LIVE_ALERT_DEFAULTS.embedColor,
+      thumbnailUrl: null,
+      bannerUrl: null,
+      buttonLabel: LIVE_ALERT_DEFAULTS.buttonLabel,
       enabled: payload.enabled,
       createdBy: request.user!.id
     });
@@ -420,14 +391,13 @@ socialLiveRoutes.put("/twitch/:id", requireAuth, async (request, response, next)
     const payload = updateAlertSchema.parse(request.body);
     const guildId = payload.guildId || existing.guildId;
     const textChannelId = payload.textChannelId || existing.discordChannelId;
-    const mentionRoleId = payload.mentionRoleId ?? existing.mentionRoleId ?? "";
 
     if (payload.guildId) {
       await assertCanManageGuild(request.user!.id, payload.guildId);
     }
 
-    if (payload.textChannelId || payload.guildId || payload.mentionRoleId !== undefined) {
-      await validateDiscordAlertChannel(textChannelId, guildId, mentionRoleId || undefined);
+    if (payload.textChannelId || payload.guildId) {
+      await validateDiscordAlertChannel(textChannelId, guildId);
     }
 
     let twitchData = {};
@@ -457,26 +427,6 @@ socialLiveRoutes.put("/twitch/:id", requireAuth, async (request, response, next)
       };
     }
 
-    const nextCustomMessage =
-      payload.customMessage !== undefined
-        ? valueOrDefault(payload.customMessage, LIVE_ALERT_DEFAULTS.customMessage)
-        : valueOrDefault(existing.customMessage || existing.alertMessage, LIVE_ALERT_DEFAULTS.customMessage);
-    const nextEmbedTitle =
-      payload.embedTitle !== undefined
-        ? valueOrDefault(payload.embedTitle, LIVE_ALERT_DEFAULTS.embedTitle)
-        : valueOrDefault(existing.embedTitle, LIVE_ALERT_DEFAULTS.embedTitle);
-    const nextEmbedDescription =
-      payload.embedDescription !== undefined
-        ? valueOrDefault(payload.embedDescription, LIVE_ALERT_DEFAULTS.embedDescription)
-        : valueOrDefault(existing.embedDescription, LIVE_ALERT_DEFAULTS.embedDescription);
-    const nextEmbedColor = payload.embedColor
-      ? normalizeColor(payload.embedColor)
-      : normalizeColor(existing.embedColor);
-    const nextButtonLabel =
-      payload.buttonLabel !== undefined
-        ? valueOrDefault(payload.buttonLabel, LIVE_ALERT_DEFAULTS.buttonLabel)
-        : valueOrDefault(existing.buttonLabel, LIVE_ALERT_DEFAULTS.buttonLabel);
-
     const alert = await TwitchLiveConfig.findByIdAndUpdate(
       existing._id,
       {
@@ -484,15 +434,15 @@ socialLiveRoutes.put("/twitch/:id", requireAuth, async (request, response, next)
           ...twitchData,
           guildId,
           discordChannelId: textChannelId,
-          mentionRoleId: mentionRoleId || null,
-          alertMessage: nextCustomMessage,
-          customMessage: nextCustomMessage,
-          embedTitle: nextEmbedTitle,
-          embedDescription: nextEmbedDescription,
-          embedColor: nextEmbedColor,
-          thumbnailUrl: payload.thumbnailUrl ?? existing.thumbnailUrl,
-          bannerUrl: payload.thumbnailUrl ?? existing.bannerUrl,
-          buttonLabel: nextButtonLabel,
+          mentionRoleId: null,
+          alertMessage: LIVE_ALERT_DEFAULTS.customMessage,
+          customMessage: LIVE_ALERT_DEFAULTS.customMessage,
+          embedTitle: LIVE_ALERT_DEFAULTS.embedTitle,
+          embedDescription: LIVE_ALERT_DEFAULTS.embedDescription,
+          embedColor: LIVE_ALERT_DEFAULTS.embedColor,
+          thumbnailUrl: null,
+          bannerUrl: null,
+          buttonLabel: LIVE_ALERT_DEFAULTS.buttonLabel,
           enabled: payload.enabled ?? existing.enabled
         }
       },
