@@ -1,4 +1,7 @@
+const fs = require("fs");
 const http = require("http");
+const path = require("path");
+const { spawnSync } = require("child_process");
 const cookieParser = require("cookie-parser");
 const cors = require("cors");
 const express = require("express");
@@ -37,6 +40,30 @@ function resolveListenConfig() {
   };
 }
 
+function ensureProductionBuild() {
+  if (process.env.NODE_ENV !== "production") return;
+
+  const buildIdPath = path.join(process.cwd(), ".next", "BUILD_ID");
+  if (fs.existsSync(buildIdPath)) return;
+
+  logger.warn("Build do Next.js nao encontrado. Executando npm run build antes de iniciar o dashboard.");
+
+  const npmCommand = process.platform === "win32" ? "npm.cmd" : "npm";
+  const result = spawnSync(npmCommand, ["run", "build"], {
+    cwd: process.cwd(),
+    env: process.env,
+    stdio: "inherit"
+  });
+
+  if (result.error) {
+    throw result.error;
+  }
+
+  if (result.status !== 0) {
+    throw new Error(`npm run build falhou com codigo ${result.status}.`);
+  }
+}
+
 async function startDashboardServer(client) {
   if (process.env.DASHBOARD_ENABLED === "false") {
     logger.info("Dashboard web desativado por DASHBOARD_ENABLED=false.");
@@ -45,6 +72,9 @@ async function startDashboardServer(client) {
 
   const dev = process.env.NODE_ENV !== "production";
   const { host, port } = resolveListenConfig();
+
+  ensureProductionBuild();
+
   const nextApp = next({ dev, dir: process.cwd() });
   const nextHandler = nextApp.getRequestHandler();
 
@@ -124,6 +154,7 @@ async function startDashboardServer(client) {
 }
 
 module.exports = {
+  ensureProductionBuild,
   resolveListenConfig,
   startDashboardServer
 };
