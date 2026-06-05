@@ -170,11 +170,11 @@ const authPath = (path: string) => apiPath(`/api/auth${path}`);
 const sessionStorageKey = "live_alerts_session";
 
 const defaultLiveUrl = import.meta.env.VITE_DEFAULT_TWITCH_ALERT_URL || "https://www.twitch.tv/ricardinn98";
-const defaultMessage = "@everyone {streamer} esta AO VIVO na Twitch!\n{url}";
-const defaultEmbedTitle = "{streamer} esta AO VIVO!";
-const defaultEmbedDescription = "**{title}**\n\nCategoria: {category}\nViewers: {viewers}\nCanal: {url}";
+const defaultMessage = "@everyone";
+const defaultEmbedTitle = "{streamer} is now live on Twitch!";
+const defaultEmbedDescription = "@{login} {title}";
 const defaultEmbedColor = "#9146FF";
-const defaultButtonLabel = "Assistir agora";
+const defaultButtonLabel = "Watch Stream";
 const socialPlatforms: SocialPlatform[] = ["TWITCH", "YOUTUBE", "TIKTOK", "KICK"];
 
 function defaultAlertForm(textChannelId = ""): AlertForm {

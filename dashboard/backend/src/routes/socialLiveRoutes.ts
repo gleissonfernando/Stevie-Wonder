@@ -24,11 +24,11 @@ export const socialLiveRoutes = Router();
 
 const DEFAULT_TWITCH_ALERT_URL = "https://www.twitch.tv/ricardinn98";
 const LIVE_ALERT_DEFAULTS = {
-  customMessage: "@everyone {streamer} esta AO VIVO na Twitch!\n{url}",
-  embedTitle: "{streamer} esta AO VIVO!",
-  embedDescription: "**{title}**\n\nCategoria: {category}\nViewers: {viewers}\nCanal: {url}",
+  customMessage: "@everyone",
+  embedTitle: "{streamer} is now live on Twitch!",
+  embedDescription: "@{login} {title}",
   embedColor: "#9146FF",
-  buttonLabel: "Assistir agora"
+  buttonLabel: "Watch Stream"
 } as const;
 
 const alertSchema = z.object({
@@ -41,7 +41,7 @@ const alertSchema = z.object({
   embedDescription: z.string().trim().max(1000).optional().or(z.literal("")),
   embedColor: z.string().trim().regex(/^#?[0-9a-fA-F]{6}$/).default("#9146FF"),
   thumbnailUrl: z.string().trim().url().optional().or(z.literal("")),
-  buttonLabel: z.string().trim().max(80).default("Assistir Live"),
+  buttonLabel: z.string().trim().max(80).default(LIVE_ALERT_DEFAULTS.buttonLabel),
   enabled: z.boolean().default(true)
 });
 
@@ -111,8 +111,20 @@ function buildLiveAlertBody(alert: any, stream: any) {
     (fallbackLogin ? `https://www.twitch.tv/${fallbackLogin}` : DEFAULT_TWITCH_ALERT_URL);
   const streamerName = stream.user_name || alert.streamerName || alert.twitchDisplayName || alert.twitchChannelName;
   const liveTitle = stream.title || `${streamerName} is now live`;
-  const category = stream.game_name || "Sem categoria";
+  const category = stream.game_name || "No category";
   const viewers = String(stream.viewer_count ?? 0);
+  const alertedAt = new Date();
+  const alertTime = new Intl.DateTimeFormat("pt-BR", {
+    hour: "2-digit",
+    minute: "2-digit"
+  }).format(alertedAt);
+  const alertDateTime = new Intl.DateTimeFormat("pt-BR", {
+    day: "2-digit",
+    month: "2-digit",
+    year: "numeric",
+    hour: "2-digit",
+    minute: "2-digit"
+  }).format(alertedAt);
   const templateValues = {
     streamer: streamerName,
     url,
@@ -146,19 +158,15 @@ function buildLiveAlertBody(alert: any, stream: any) {
         },
         description,
         fields: [
-          { name: "Titulo", value: liveTitle, inline: false },
-          { name: "Categoria", value: category, inline: true },
+          { name: "Game", value: category, inline: true },
           { name: "Viewers", value: viewers, inline: true }
         ],
         thumbnail: thumbnailUrl ? { url: thumbnailUrl } : undefined,
         image: imageUrl ? { url: imageUrl } : undefined,
         footer: {
-          text: `${fallbackLogin || streamerName} lives - Hoje as ${new Intl.DateTimeFormat("pt-BR", {
-            hour: "2-digit",
-            minute: "2-digit"
-          }).format(new Date())}`
+          text: `${fallbackLogin || streamerName} lives - Hoje às ${alertTime} - ${alertDateTime}`
         },
-        timestamp: new Date().toISOString(),
+        timestamp: alertedAt.toISOString(),
         url
       }
     ],
