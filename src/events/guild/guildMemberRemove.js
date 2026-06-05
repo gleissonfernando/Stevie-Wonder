@@ -1,7 +1,5 @@
 const { Events } = require("discord.js");
 const { sendAuditLog } = require("../../services/discord/auditLogger");
-const { emitGuildStats } = require("../../services/discord/dashboardSync");
-const logger = require("../../utils/logger");
 
 module.exports = {
   name: Events.GuildMemberRemove,
@@ -18,8 +16,5 @@ module.exports = {
       ]
     });
 
-    emitGuildStats(member.guild).catch((error) => {
-      logger.warn(`Nao foi possivel atualizar stats do dashboard: ${error.message}`);
-    });
   }
 };

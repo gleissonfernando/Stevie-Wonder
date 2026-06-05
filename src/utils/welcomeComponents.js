@@ -49,8 +49,7 @@ function buildButton(label, emoji, url) {
 function buildWelcomeButtons(config) {
   const buttons = [
     buildButton("Regras", "\uD83D\uDCDC", config.buttons.rulesUrl),
-    buildButton("Suporte", "\uD83C\uDFAB", config.buttons.supportUrl),
-    buildButton("Site", "\uD83C\uDF10", config.buttons.siteUrl)
+    buildButton("Suporte", "\uD83C\uDFAB", config.buttons.supportUrl)
   ].filter(Boolean);
 
   if (!buttons.length) return null;

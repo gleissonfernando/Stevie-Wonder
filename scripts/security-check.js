@@ -36,10 +36,6 @@ for (const file of searchableFiles) {
       findings.push(`${location}: ID Discord fixo`);
     }
 
-    if (file === ".env.example" && /^TWITCH_CLIENT_ID=.+/i.test(line)) {
-      findings.push(`${location}: Twitch Client ID deve ficar vazio no exemplo`);
-    }
-
     if (file === ".env.example" && /https?:\/\/(?:localhost|127\.0\.0\.1)/i.test(line)) {
       findings.push(`${location}: URL local em arquivo de exemplo`);
     }

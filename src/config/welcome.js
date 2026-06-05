@@ -15,8 +15,7 @@ module.exports = {
   // URLs dos botoes. Use links reais apenas no .env local ou no ambiente de deploy.
   buttons: {
     rulesUrl: process.env.WELCOME_RULES_URL || "",
-    supportUrl: process.env.WELCOME_SUPPORT_URL || "",
-    siteUrl: process.env.WELCOME_SITE_URL || process.env.SITE_URL || ""
+    supportUrl: process.env.WELCOME_SUPPORT_URL || ""
   },
 
   theme: {

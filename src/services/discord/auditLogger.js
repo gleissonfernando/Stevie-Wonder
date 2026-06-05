@@ -1,7 +1,6 @@
 const { EmbedBuilder, PermissionFlagsBits } = require("discord.js");
 const auditConfig = require("../../config/auditLogs");
 const logger = require("../../utils/logger");
-const { emitDashboardLog } = require("./dashboardSync");
 
 async function resolveAuditChannel(guild) {
   const channelById = auditConfig.channelId
@@ -20,19 +19,6 @@ function trim(value, maxLength = 900) {
 }
 
 async function sendAuditLog(guild, payload) {
-  emitDashboardLog(guild, {
-    type: payload.type || "discord",
-    action: payload.action || payload.title?.toLowerCase().replace(/\s+/g, "_") || "audit",
-    message: payload.description || payload.title,
-    counter: payload.counter,
-    userId: payload.userId,
-    targetId: payload.targetId,
-    metadata: {
-      title: payload.title,
-      fields: payload.fields || []
-    }
-  });
-
   const channel = await resolveAuditChannel(guild);
 
   if (!channel) {

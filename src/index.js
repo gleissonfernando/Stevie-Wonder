@@ -5,7 +5,6 @@ const { loadCommands } = require("./services/discord/commandHandler");
 const { loadEvents } = require("./services/discord/eventHandler");
 const { loadComponents } = require("./services/discord/componentHandler");
 const { connectDatabase } = require("./services/database/mongoose");
-const { startDashboardSocket } = require("./services/socketClient/dashboardSocket");
 const logger = require("./utils/logger");
 
 const client = new Client({
@@ -37,7 +36,6 @@ async function bootstrap() {
     }
 
     await client.login(process.env.DISCORD_TOKEN);
-    client.dashboardSocket = startDashboardSocket(client);
   } catch (error) {
     logger.error("Falha ao iniciar o bot", error);
     if (process.env.BOT_EXIT_ON_FAILURE !== "false") {

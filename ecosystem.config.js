@@ -2,12 +2,10 @@ module.exports = {
   apps: [
     {
       name: "steve-wonder",
-      script: "scripts/start-dashboard.cjs",
+      script: "src/index.js",
       watch: false,
       env: {
-        NODE_ENV: "production",
-        PORT: "80",
-        START_DISCORD_BOT: "false"
+        NODE_ENV: "production"
       }
     }
   ]
