@@ -46,6 +46,11 @@ SOCKET_PORT=80
 DASHBOARD_ENABLED=true
 TWITCH_CLIENT_ID=
 TWITCH_CLIENT_SECRET=
+TWITCH_REDIRECT_URI=https://steviewonder.shardweb.app/api/auth/twitch/callback
+TWITCH_EVENTSUB_SECRET=
+TWITCH_TOKEN_ENCRYPTION_KEY=
+SITE_URL=https://steviewonder.shardweb.app
+API_URL=https://steviewonder.shardweb.app
 ```
 
 3. Registre os slash commands:
@@ -103,7 +108,66 @@ Se aparecer `502 Bad Gateway` na Shard Cloud, confira estes pontos:
 - MongoDB com collections de usuarios, guilds, configs, auditoria e sessoes.
 - Socket.IO com eventos `dashboard:updateConfig`, `dashboard:testAlert`, `dashboard:sendNotice`, `bot:status`, `bot:ping`, `bot:error` e `bot:configUpdated`.
 - Modulos de Twitch, boas-vindas, saida, logs, cargos, verificacao, avisos, comandos, aparencia, configuracoes e diagnostico.
+- Sistema de Cargo Sub Twitch com OAuth Twitch, EventSub, vinculo Discord + Twitch e entrega/remocao automatica de cargo.
 - O bot le configuracoes salvas e atualiza comportamento sem reiniciar.
+
+## Sistema de Cargo Sub Twitch
+
+O modulo fica em:
+
+```text
+/dashboard/:guildId/sub-twitch
+```
+
+A pagina de vinculo dos usuarios fica em:
+
+```text
+/vincular-conta
+```
+
+Fluxo:
+
+1. O admin entra com Discord e abre `Sub Twitch` no servidor.
+2. Clica em `Conectar Twitch` para conectar a conta do streamer.
+3. Escolhe cargo de sub, canal de logs, mensagem e ativa o sistema.
+4. O sistema cria assinaturas EventSub para `channel.subscribe`, `channel.subscription.message` e `channel.subscription.end`.
+5. Cada usuario que quiser receber cargo acessa `/vincular-conta` e conecta Discord + Twitch.
+6. Quando a Twitch envia a sub, o webhook valida a assinatura, busca o vinculo e entrega/remove o cargo no Discord.
+
+Collections usadas:
+
+- `twitchSubConfigs`
+- `linkedAccounts`
+- `twitchSubLogs`
+
+Rotas principais:
+
+```text
+GET  /api/auth/twitch
+GET  /api/auth/twitch/callback
+POST /api/link/discord
+POST /api/link/twitch
+GET  /api/link/status
+GET  /api/user/guilds
+GET  /api/guild/:guildId/roles
+GET  /api/guild/:guildId/channels
+GET  /api/twitch/sub/config/:guildId
+POST /api/twitch/sub/config
+POST /api/twitch/sub/test
+POST /api/twitch/eventsub/webhook
+```
+
+Configure na Twitch Developer Console:
+
+```text
+OAuth Redirect URL:
+https://steviewonder.shardweb.app/api/auth/twitch/callback
+
+EventSub Webhook Callback:
+https://steviewonder.shardweb.app/api/twitch/eventsub/webhook
+```
+
+O segredo do EventSub deve ser o mesmo valor de `TWITCH_EVENTSUB_SECRET`.
 
 ## Scripts
 

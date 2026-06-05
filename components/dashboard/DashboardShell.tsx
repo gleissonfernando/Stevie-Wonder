@@ -9,6 +9,7 @@ import {
   Bell,
   Bot,
   Command,
+  Crown,
   DoorOpen,
   HeartHandshake,
   Home,
@@ -32,6 +33,7 @@ type DashboardShellProps = {
 const navItems = [
   { href: "home", label: "Home", icon: Home },
   { href: "twitch", label: "Lives", icon: Radio },
+  { href: "sub-twitch", label: "Sub Twitch", icon: Crown },
   { href: "welcome", label: "Boas-vindas", icon: HeartHandshake },
   { href: "leave", label: "Saidas", icon: DoorOpen },
   { href: "logs", label: "Logs", icon: Activity },

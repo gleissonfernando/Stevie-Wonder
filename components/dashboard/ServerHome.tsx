@@ -7,6 +7,7 @@ import {
   Bell,
   Bot,
   Command,
+  Crown,
   Database,
   HeartHandshake,
   Radio,
@@ -111,6 +112,13 @@ export function ServerHome({ guildId }: { guildId: string }) {
       <section>
         <h2 className="mb-4 text-xl font-semibold">Modulos rapidos</h2>
         <div className="grid gap-4 md:grid-cols-2 xl:grid-cols-3">
+          <ConfigCard
+            href={`/dashboard/${guildId}/sub-twitch`}
+            icon={Crown}
+            title="Sub Twitch"
+            description="Entregue cargo automatico quando uma pessoa der sub na live conectada."
+            active={Boolean(configs.roles?.twitchSubRoleId)}
+          />
           <ConfigCard
             href={`/dashboard/${guildId}/notices`}
             icon={Bell}

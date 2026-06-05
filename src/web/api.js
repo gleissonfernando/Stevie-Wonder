@@ -27,6 +27,7 @@ const {
 } = require("../services/dashboard/configStore");
 const { VerificationConfig } = require("../models/dashboard");
 const { noticeSchema, parseModulePayload } = require("../services/dashboard/validators");
+const { setupTwitchSubRoutes } = require("./twitchSubRoutes");
 
 const moduleRoutes = {
   config: "config",
@@ -100,6 +101,8 @@ function setupDashboardApi(app, context) {
   router.get("/bot/status", (_req, res) => {
     res.json(getBotStatus(client, botBridge.startedAt, io.engine.clientsCount));
   });
+
+  setupTwitchSubRoutes(router, context);
 
   router.post("/auth/discord", (req, res) => {
     const state = createOAuthState(res);

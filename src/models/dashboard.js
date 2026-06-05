@@ -62,6 +62,64 @@ const twitchAlertSchema = new Schema(
   { timestamps: true, collection: "twitch_alerts" }
 );
 
+const twitchSubConfigSchema = new Schema(
+  {
+    guildId: { type: String, required: true, unique: true, index: true },
+    guildName: { type: String, default: "" },
+    ownerId: { type: String, default: "" },
+    twitchBroadcasterId: { type: String, default: "", index: true },
+    twitchBroadcasterName: { type: String, default: "" },
+    subRoleId: { type: String, default: "" },
+    logChannelId: { type: String, default: "" },
+    enabled: { type: Boolean, default: false },
+    customMessage: { type: String, default: "Obrigado pelo sub, {twitchUsername}! Cargo entregue no Discord." },
+    encryptedAccessToken: { type: String, default: "" },
+    encryptedRefreshToken: { type: String, default: "" },
+    tokenExpiresAt: { type: Date, default: null },
+    eventSubSubscriptions: {
+      type: [
+        {
+          type: String,
+          id: String,
+          status: String,
+          createdAt: Date
+        }
+      ],
+      default: []
+    },
+    lastSubAt: { type: Date, default: null },
+    lastSubTwitchUsername: { type: String, default: "" }
+  },
+  { timestamps: true, collection: "twitchSubConfigs" }
+);
+
+const linkedAccountSchema = new Schema(
+  {
+    discordUserId: { type: String, required: true, unique: true, index: true },
+    discordUsername: { type: String, required: true },
+    twitchUserId: { type: String, required: true, unique: true, index: true },
+    twitchUsername: { type: String, required: true },
+    encryptedAccessToken: { type: String, default: "" },
+    encryptedRefreshToken: { type: String, default: "" },
+    tokenExpiresAt: { type: Date, default: null }
+  },
+  { timestamps: true, collection: "linkedAccounts" }
+);
+
+const twitchSubLogSchema = new Schema(
+  {
+    guildId: { type: String, required: true, index: true },
+    twitchUserId: { type: String, default: "", index: true },
+    twitchUsername: { type: String, default: "" },
+    discordUserId: { type: String, default: "", index: true },
+    action: { type: String, required: true },
+    roleId: { type: String, default: "" },
+    status: { type: String, required: true },
+    error: { type: String, default: "" }
+  },
+  { timestamps: { createdAt: true, updatedAt: false }, collection: "twitchSubLogs" }
+);
+
 const welcomeConfigSchema = new Schema(
   {
     guildId: { type: String, required: true, unique: true, index: true },
@@ -210,6 +268,9 @@ module.exports = {
   Guild: safeModel("DashboardGuild", guildSchema),
   GuildConfig: safeModel("DashboardGuildConfig", guildConfigSchema),
   TwitchAlert: safeModel("DashboardTwitchAlert", twitchAlertSchema),
+  TwitchSubConfig: safeModel("DashboardTwitchSubConfig", twitchSubConfigSchema),
+  LinkedAccount: safeModel("DashboardLinkedAccount", linkedAccountSchema),
+  TwitchSubLog: safeModel("DashboardTwitchSubLog", twitchSubLogSchema),
   WelcomeConfig: safeModel("DashboardWelcomeConfig", welcomeConfigSchema),
   LeaveConfig: safeModel("DashboardLeaveConfig", leaveConfigSchema),
   LogConfig: safeModel("DashboardLogConfig", logConfigSchema),
