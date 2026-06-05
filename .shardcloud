@@ -1,0 +1,7 @@
+DISPLAY_NAME=Steve Wonder
+DESCRIPTION=Discord bot and live alerts dashboard
+LANGUAGE=node
+MEMORY=1024
+VERSION=recommended
+SUBDOMAIN=steviewonder
+CUSTOM_COMMAND=npm run build && npm run start
