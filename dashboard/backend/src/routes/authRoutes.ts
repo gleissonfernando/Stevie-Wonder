@@ -65,7 +65,7 @@ function serializeSessionUser(user: any, fallback: any = {}) {
     email: user?.email || fallback.email || null,
     lastLoginAt: user?.lastLoginAt || fallback.lastLoginAt || null,
     authenticated: true,
-    guilds: serializeCachedGuilds(user?.guilds || []).filter((guild) => guild.canManage)
+    guilds: serializeCachedGuilds(user?.guilds || fallback.guilds || []).filter((guild) => guild.canManage)
   };
 }
 
@@ -144,7 +144,8 @@ authRoutes.get("/me", requireAuth, async (request, response, next) => {
     const dashboardUser = await DashboardUser.findOne({ discordId: request.user!.id }).lean();
     response.json({ user: serializeSessionUser(dashboardUser, request.user) });
   } catch (error) {
-    next(error);
+    console.warn("Falha ao carregar usuario do Mongo; usando sessao JWT.", error);
+    response.json({ user: serializeSessionUser(null, request.user) });
   }
 });
 
@@ -175,6 +176,9 @@ authRoutes.get("/discord/callback", async (request, response, next) => {
     }
 
     const guilds = discordGuilds ? discordGuilds.map(serializeDiscordGuild) : null;
+    const sessionGuilds = guilds
+      ? serializeCachedGuilds(guilds).filter((guild) => guild.canManage)
+      : [];
     const lastLoginAt = new Date();
 
     const user = {
@@ -182,47 +186,53 @@ authRoutes.get("/discord/callback", async (request, response, next) => {
       username: discordUser.global_name || discordUser.username,
       avatar: discordAvatarUrl(discordUser),
       email: discordUser.email || null,
-      lastLoginAt: lastLoginAt.toISOString()
+      lastLoginAt: lastLoginAt.toISOString(),
+      guilds: sessionGuilds
     };
-
-    await connectMongo();
-    const expiresIn = Number(token.expires_in || 604800);
-    const tokenUpdate: Record<string, unknown> = {
-      discordAccessToken: encryptToken(token.access_token),
-      discordTokenExpiresAt: new Date(Date.now() + expiresIn * 1000),
-      discordScopes: scopeList(token.scope),
-      lastLoginAt
-    };
-
-    if (token.refresh_token) {
-      tokenUpdate.discordRefreshToken = encryptToken(token.refresh_token);
-    }
-
-    const profileUpdate: Record<string, unknown> = {
-      username: user.username,
-      email: discordUser.email || null,
-      avatar: user.avatar,
-      ...tokenUpdate
-    };
-
-    if (guilds) {
-      profileUpdate.guilds = guilds;
-    }
-
-    await DashboardUser.findOneAndUpdate(
-      { discordId: discordUser.id },
-      {
-        $set: profileUpdate,
-        $setOnInsert: {
-          discordId: discordUser.id,
-          firstLoginAt: lastLoginAt
-        }
-      },
-      { upsert: true, new: true }
-    );
 
     const session = signSession(user);
     response.cookie(env.cookieName, session, sessionCookieOptions(request));
+
+    try {
+      await connectMongo();
+      const expiresIn = Number(token.expires_in || 604800);
+      const tokenUpdate: Record<string, unknown> = {
+        discordAccessToken: encryptToken(token.access_token),
+        discordTokenExpiresAt: new Date(Date.now() + expiresIn * 1000),
+        discordScopes: scopeList(token.scope),
+        lastLoginAt
+      };
+
+      if (token.refresh_token) {
+        tokenUpdate.discordRefreshToken = encryptToken(token.refresh_token);
+      }
+
+      const profileUpdate: Record<string, unknown> = {
+        username: user.username,
+        email: discordUser.email || null,
+        avatar: user.avatar,
+        ...tokenUpdate
+      };
+
+      if (guilds) {
+        profileUpdate.guilds = guilds;
+      }
+
+      await DashboardUser.findOneAndUpdate(
+        { discordId: discordUser.id },
+        {
+          $set: profileUpdate,
+          $setOnInsert: {
+            discordId: discordUser.id,
+            firstLoginAt: lastLoginAt
+          }
+        },
+        { upsert: true, new: true }
+      );
+    } catch (databaseError) {
+      console.warn("Login Discord criado, mas nao foi possivel salvar usuario no Mongo.", databaseError);
+    }
+
     response.redirect(`${publicBaseUrl(request)}/dashboard`);
   } catch (error) {
     const message = error instanceof Error ? error.message : "discord_auth_failed";

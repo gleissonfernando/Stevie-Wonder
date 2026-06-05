@@ -183,7 +183,7 @@ async function publishTwitchChange(
   emitBotEvent("dashboard:twitchChannelChanged", { guildId, action, alert: serialized });
 }
 
-async function resolveAuthorizedGuilds(userId: string, accessToken?: string) {
+async function resolveAuthorizedGuilds(userId: string, accessToken?: string, sessionGuilds: any[] = []) {
   if (env.authorizedUserIds.includes(userId) && env.guildId) {
     const guild = await fetchGuild(env.guildId);
     await ensureDashboardGuild(guild.id, {
@@ -205,11 +205,21 @@ async function resolveAuthorizedGuilds(userId: string, accessToken?: string) {
     ];
   }
 
-  await connectMongo();
-  const dashboardUser = (await DashboardUser.findOne({ discordId: userId })
-    .select("+discordAccessToken +discordRefreshToken")
-    .lean()) as any;
-  const cachedGuilds = Array.isArray(dashboardUser?.guilds) ? dashboardUser.guilds : [];
+  let mongoAvailable = true;
+  let dashboardUser: any = null;
+  try {
+    await connectMongo();
+    dashboardUser = (await DashboardUser.findOne({ discordId: userId })
+      .select("+discordAccessToken +discordRefreshToken")
+      .lean()) as any;
+  } catch (error) {
+    mongoAvailable = false;
+    console.warn("Falha ao consultar usuario no Mongo; usando servidores da sessao.", error);
+  }
+
+  const cachedGuilds = Array.isArray(dashboardUser?.guilds) && dashboardUser.guilds.length
+    ? dashboardUser.guilds
+    : sessionGuilds;
   const manageableCachedGuilds = () =>
     cachedGuilds
       .filter((guild: any) => guild.canManage)
@@ -242,12 +252,14 @@ async function resolveAuthorizedGuilds(userId: string, accessToken?: string) {
         refreshUpdate.discordRefreshToken = encryptToken(refreshed.refresh_token);
       }
 
-      await DashboardUser.updateOne(
-        { discordId: userId },
-        {
-          $set: refreshUpdate
-        }
-      );
+      if (mongoAvailable) {
+        await DashboardUser.updateOne(
+          { discordId: userId },
+          {
+            $set: refreshUpdate
+          }
+        );
+      }
     }
   }
 
@@ -282,7 +294,9 @@ async function resolveAuthorizedGuilds(userId: string, accessToken?: string) {
       owner: guild.owner
     }));
 
-  await DashboardUser.updateOne({ discordId: userId }, { $set: { guilds: serializedGuilds } });
+  if (mongoAvailable) {
+    await DashboardUser.updateOne({ discordId: userId }, { $set: { guilds: serializedGuilds } });
+  }
 
   await Promise.all(
     authorizedGuilds.map((guild) =>
@@ -343,7 +357,7 @@ async function sendLiveAlertIfNeeded(alert: any) {
 
 socialLiveRoutes.get("/guilds", requireAuth, async (request, response, next) => {
   try {
-    const guilds = await resolveAuthorizedGuilds(request.user!.id, request.user!.accessToken);
+    const guilds = await resolveAuthorizedGuilds(request.user!.id, request.user!.accessToken, request.user!.guilds || []);
     response.json({ guilds });
   } catch (error) {
     next(error);

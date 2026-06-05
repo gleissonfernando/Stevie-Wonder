@@ -1120,8 +1120,10 @@ export default function App() {
         setGuilds(guildData.guilds);
         setSelectedGuildId((current) => current || guildData.guilds[0]?.id || "");
       } catch (guildError) {
-        setGuilds([]);
-        setSelectedGuildId("");
+        if (!session.user.guilds?.length) {
+          setGuilds([]);
+          setSelectedGuildId("");
+        }
         setError(guildError instanceof Error ? guildError.message : "Sessao criada, mas nao foi possivel listar servidores.");
       }
     } catch (err) {

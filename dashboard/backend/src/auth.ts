@@ -8,6 +8,13 @@ export type AuthUser = {
   avatar?: string | null;
   email?: string | null;
   lastLoginAt?: string | null;
+  guilds?: Array<{
+    id: string;
+    name: string;
+    icon?: string | null;
+    owner?: boolean;
+    canManage?: boolean;
+  }>;
   accessToken?: string;
 };
 
