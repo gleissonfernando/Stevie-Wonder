@@ -1,6 +1,7 @@
 import {
   Bell,
   Bot,
+  CalendarClock,
   CheckCircle2,
   Activity,
   Hash,
@@ -8,6 +9,7 @@ import {
   Loader2,
   LogIn,
   LogOut,
+  Mail,
   Menu,
   Pencil,
   Plus,
@@ -34,6 +36,10 @@ type AuthUser = {
   id: string;
   username: string;
   avatar?: string | null;
+  email?: string | null;
+  lastLoginAt?: string | null;
+  authenticated?: boolean;
+  guilds?: Guild[];
 };
 
 type Guild = {
@@ -235,6 +241,16 @@ function writeSession(session: string) {
   document.cookie = `live_alerts_session_fallback=${encodeURIComponent(session)}; path=/; max-age=604800; SameSite=Lax`;
 }
 
+function clearStoredSession() {
+  try {
+    localStorage.removeItem(sessionStorageKey);
+  } catch {
+    // Cookie cleanup below is enough when storage is unavailable.
+  }
+
+  document.cookie = "live_alerts_session_fallback=; path=/; max-age=0; SameSite=Lax";
+}
+
 function storedSessionToken() {
   return readLocalSession() || decodeURIComponent(readCookie("live_alerts_session_fallback") || "");
 }
@@ -268,6 +284,10 @@ async function apiJson<T>(path: string, options?: RequestInit): Promise<T> {
 
   if (!response.ok) {
     const data = await response.json().catch(() => ({ error: "Erro ao processar requisicao." }));
+    if (response.status === 401) {
+      clearStoredSession();
+      window.dispatchEvent(new CustomEvent("auth:expired"));
+    }
     throw new Error(data.error || "Erro ao processar requisicao.");
   }
 
@@ -293,6 +313,20 @@ function formatDate(value: string) {
     hour: "2-digit",
     minute: "2-digit"
   }).format(new Date(value));
+}
+
+function formatFullDate(value?: string | null) {
+  if (!value) return "Ainda nao registrado";
+  const date = new Date(value);
+  if (Number.isNaN(date.getTime())) return "Ainda nao registrado";
+
+  return new Intl.DateTimeFormat("pt-BR", {
+    day: "2-digit",
+    month: "2-digit",
+    year: "numeric",
+    hour: "2-digit",
+    minute: "2-digit"
+  }).format(date);
 }
 
 function LoginScreen({ error }: { error: string }) {
@@ -600,6 +634,97 @@ function CategorySection({
         <span>{description}</span>
       </div>
       <div className="config-card-list">{children}</div>
+    </section>
+  );
+}
+
+function AuthOverview({
+  user,
+  guilds,
+  selectedGuildId,
+  onSelectGuild
+}: {
+  user: AuthUser;
+  guilds: Guild[];
+  selectedGuildId: string;
+  onSelectGuild: (guildId: string) => void;
+}) {
+  return (
+    <section className="auth-overview">
+      <article className="auth-profile-card">
+        <div className="auth-profile-main">
+          <div className="auth-avatar">
+            {user.avatar ? <img src={user.avatar} alt="" /> : <Bot size={28} />}
+          </div>
+          <div>
+            <span className="auth-status-pill">
+              <CheckCircle2 size={15} />
+              Autenticado
+            </span>
+            <h2>{user.username}</h2>
+            <p>Conta Discord liberada para acessar a Dashboard.</p>
+          </div>
+        </div>
+
+        <div className="identity-grid">
+          <div className="identity-item">
+            <Hash size={17} />
+            <span>Discord ID</span>
+            <strong>{user.id}</strong>
+          </div>
+          <div className="identity-item">
+            <Mail size={17} />
+            <span>E-mail</span>
+            <strong>{user.email || "Nao autorizado"}</strong>
+          </div>
+          <div className="identity-item wide-identity">
+            <CalendarClock size={17} />
+            <span>Ultimo acesso</span>
+            <strong>{formatFullDate(user.lastLoginAt)}</strong>
+          </div>
+        </div>
+      </article>
+
+      <article className="auth-servers-card">
+        <div className="panel-header compact-panel-header">
+          <div>
+            <p className="eyebrow">Servidores</p>
+            <h2>Disponiveis para gerenciamento</h2>
+          </div>
+          <span className="connection-pill online">
+            <Server size={14} />
+            {guilds.length}
+          </span>
+        </div>
+
+        <div className="auth-server-list">
+          {guilds.length ? (
+            guilds.map((guild) => (
+              <button
+                className={`server-tile ${guild.id === selectedGuildId ? "selected" : ""}`}
+                key={guild.id}
+                type="button"
+                onClick={() => onSelectGuild(guild.id)}
+              >
+                <div className="avatar-box compact-avatar">
+                  {guild.icon ? <img src={guild.icon} alt="" /> : <Server size={16} />}
+                </div>
+                <div>
+                  <strong>{guild.name}</strong>
+                  <span>{guild.owner ? "Owner" : "Manage Guild"}</span>
+                </div>
+                {guild.id === selectedGuildId ? <CheckCircle2 size={17} /> : null}
+              </button>
+            ))
+          ) : (
+            <div className="compact-empty-state">
+              <Server size={22} />
+              <strong>Nenhum servidor disponivel</strong>
+              <span>Entre com uma conta que possua Administrator ou Manage Guild.</span>
+            </div>
+          )}
+        </div>
+      </article>
     </section>
   );
 }
@@ -986,6 +1111,10 @@ export default function App() {
     try {
       const session = await apiJson<{ user: AuthUser }>("/api/auth/me", { cache: "no-store" });
       setUser(session.user);
+      if (session.user.guilds?.length) {
+        setGuilds(session.user.guilds);
+        setSelectedGuildId((current) => current || session.user.guilds?.[0]?.id || "");
+      }
       try {
         const guildData = await apiJson<{ guilds: Guild[] }>("/api/lives/guilds", { cache: "no-store" });
         setGuilds(guildData.guilds);
@@ -1075,6 +1204,18 @@ export default function App() {
   useEffect(() => {
     captureSessionFromUrl();
     loadSession();
+  }, []);
+
+  useEffect(() => {
+    const handleExpiredSession = () => {
+      setUser(null);
+      setGuilds([]);
+      setSelectedGuildId("");
+      setError("Sessao expirada. Entre novamente com Discord.");
+    };
+
+    window.addEventListener("auth:expired", handleExpiredSession);
+    return () => window.removeEventListener("auth:expired", handleExpiredSession);
   }, []);
 
   useEffect(() => {
@@ -1337,12 +1478,7 @@ export default function App() {
       credentials: "include",
       headers: storedSession ? { Authorization: `Bearer ${storedSession}` } : undefined
     }).catch(() => null);
-    try {
-      localStorage.removeItem(sessionStorageKey);
-    } catch {
-      // Ignore storage cleanup failures; the cookie fallback is cleared below.
-    }
-    document.cookie = "live_alerts_session_fallback=; path=/; max-age=0; SameSite=Lax";
+    clearStoredSession();
     setUser(null);
   }
 
@@ -1424,7 +1560,7 @@ export default function App() {
               </div>
               <div>
                 <strong>{user.username}</strong>
-                <span>Perfil Discord</span>
+                <span>ID {user.id}</span>
               </div>
             </div>
           </div>
@@ -1443,6 +1579,13 @@ export default function App() {
                   <span>Gerencie módulos, permissões, logs e integrações em uma estrutura pronta para crescer.</span>
                 </div>
               </section>
+
+              <AuthOverview
+                user={user}
+                guilds={guilds}
+                selectedGuildId={selectedGuildId}
+                onSelectGuild={setSelectedGuildId}
+              />
 
               <section className="stats-grid">
                 <article className="stat-card">

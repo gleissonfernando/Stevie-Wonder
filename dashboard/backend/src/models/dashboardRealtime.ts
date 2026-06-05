@@ -58,10 +58,31 @@ const dashboardUserSchema = new Schema(
     discordId: { type: String, required: true, unique: true, index: true },
     username: { type: String, required: true },
     email: { type: String },
-    avatar: { type: String }
+    avatar: { type: String },
+    discordAccessToken: { type: String, select: false },
+    discordRefreshToken: { type: String, select: false },
+    discordTokenExpiresAt: { type: Date },
+    discordScopes: { type: [String], default: [] },
+    guilds: {
+      type: [
+        {
+          id: { type: String, required: true },
+          name: { type: String, required: true },
+          icon: { type: String },
+          owner: { type: Boolean, default: false },
+          permissions: { type: String },
+          canManage: { type: Boolean, default: false }
+        }
+      ],
+      default: []
+    },
+    firstLoginAt: { type: Date },
+    lastLoginAt: { type: Date }
   },
   { timestamps: true }
 );
+
+dashboardUserSchema.index({ lastLoginAt: -1 });
 
 const socialNotificationSchema = new Schema(
   {

@@ -3,7 +3,8 @@ import { z } from "zod";
 import { requireAuth } from "../auth";
 import {
   discordGuildIconUrl,
-  fetchDiscordUserGuilds
+  fetchDiscordUserGuilds,
+  refreshDiscordToken
 } from "../discord";
 import { env } from "../env";
 import {
@@ -18,7 +19,9 @@ import { extractTwitchLogin, getTwitchStreamByUserId, getTwitchUserByLogin } fro
 import { ensureDashboardGuild, recordGuildLog, serializeGuildLog } from "../services/dashboardData";
 import { emitBotEvent, emitGuildEvent } from "../socket/dashboardSocket";
 import { connectMongo } from "../services/mongo";
+import { DashboardUser } from "../models/dashboardRealtime";
 import { TwitchLiveConfig } from "../models/twitchLiveConfig";
+import { decryptToken, encryptToken } from "../secureTokens";
 
 export const socialLiveRoutes = Router();
 
@@ -202,18 +205,84 @@ async function resolveAuthorizedGuilds(userId: string, accessToken?: string) {
     ];
   }
 
-  if (!accessToken) return [];
+  await connectMongo();
+  const dashboardUser = (await DashboardUser.findOne({ discordId: userId })
+    .select("+discordAccessToken +discordRefreshToken")
+    .lean()) as any;
+  const cachedGuilds = Array.isArray(dashboardUser?.guilds) ? dashboardUser.guilds : [];
+  const manageableCachedGuilds = () =>
+    cachedGuilds
+      .filter((guild: any) => guild.canManage)
+      .map((guild: any) => ({
+        id: String(guild.id),
+        name: String(guild.name || guild.id),
+        icon: guild.icon || null,
+        owner: Boolean(guild.owner)
+      }));
+  let resolvedAccessToken = accessToken || decryptToken(dashboardUser?.discordAccessToken as string | undefined);
 
-  const guilds = await fetchDiscordUserGuilds(accessToken);
+  const expiresAt = dashboardUser?.discordTokenExpiresAt
+    ? new Date(dashboardUser.discordTokenExpiresAt).getTime()
+    : 0;
 
-  const authorizedGuilds = guilds
-    .filter((guild) => hasGuildManagementPermission(guild.permissions, guild.owner))
+  if (resolvedAccessToken && expiresAt && expiresAt <= Date.now() + 60_000) {
+    const refreshToken = decryptToken(dashboardUser?.discordRefreshToken as string | undefined);
+    if (refreshToken) {
+      const refreshed = await refreshDiscordToken(refreshToken);
+      resolvedAccessToken = refreshed.access_token;
+      const refreshUpdate: Record<string, unknown> = {
+        discordAccessToken: encryptToken(refreshed.access_token),
+        discordTokenExpiresAt: new Date(Date.now() + Number(refreshed.expires_in || 604800) * 1000),
+        discordScopes: String(refreshed.scope || env.discordOauthScopes)
+          .split(/\s+/)
+          .filter(Boolean)
+      };
+
+      if (refreshed.refresh_token) {
+        refreshUpdate.discordRefreshToken = encryptToken(refreshed.refresh_token);
+      }
+
+      await DashboardUser.updateOne(
+        { discordId: userId },
+        {
+          $set: refreshUpdate
+        }
+      );
+    }
+  }
+
+  if (!resolvedAccessToken) {
+    return manageableCachedGuilds();
+  }
+
+  let guilds;
+  try {
+    guilds = await fetchDiscordUserGuilds(resolvedAccessToken);
+  } catch (error) {
+    const cached = manageableCachedGuilds();
+    if (cached.length) return cached;
+    throw error;
+  }
+
+  const serializedGuilds = guilds.map((guild) => ({
+    id: guild.id,
+    name: guild.name,
+    icon: discordGuildIconUrl(guild),
+    owner: Boolean(guild.owner),
+    permissions: guild.permissions || "0",
+    canManage: hasGuildManagementPermission(guild.permissions, guild.owner)
+  }));
+
+  const authorizedGuilds = serializedGuilds
+    .filter((guild) => guild.canManage)
     .map((guild) => ({
       id: guild.id,
       name: guild.name,
-      icon: discordGuildIconUrl(guild),
-      owner: Boolean(guild.owner)
+      icon: guild.icon,
+      owner: guild.owner
     }));
+
+  await DashboardUser.updateOne({ discordId: userId }, { $set: { guilds: serializedGuilds } });
 
   await Promise.all(
     authorizedGuilds.map((guild) =>

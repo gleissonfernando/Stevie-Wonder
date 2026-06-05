@@ -6,6 +6,8 @@ export type AuthUser = {
   id: string;
   username: string;
   avatar?: string | null;
+  email?: string | null;
+  lastLoginAt?: string | null;
   accessToken?: string;
 };
 

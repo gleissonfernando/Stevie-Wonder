@@ -8,6 +8,14 @@ type DiscordUser = {
   email?: string | null;
 };
 
+export type DiscordOAuthToken = {
+  access_token: string;
+  refresh_token?: string;
+  token_type?: string;
+  expires_in: number;
+  scope?: string;
+};
+
 export type DiscordUserGuild = {
   id: string;
   name: string;
@@ -21,7 +29,7 @@ export function discordAvatarUrl(user: DiscordUser) {
   return `https://cdn.discordapp.com/avatars/${user.id}/${user.avatar}.png?size=128`;
 }
 
-export function oauthUrl(redirectUri = env.redirectUri) {
+export function oauthUrl(redirectUri = env.redirectUri, state?: string) {
   if (!env.clientId) {
     throw new Error("discord_client_id_missing");
   }
@@ -32,6 +40,10 @@ export function oauthUrl(redirectUri = env.redirectUri) {
     response_type: "code",
     scope: env.discordOauthScopes
   });
+
+  if (state) {
+    params.set("state", state);
+  }
 
   return `https://discord.com/oauth2/authorize?${params.toString()}`;
 }
@@ -63,7 +75,36 @@ export async function exchangeCode(code: string, redirectUri = env.redirectUri) 
     throw new Error(`Falha ao autenticar com Discord. Status ${response.status}.`);
   }
 
-  return response.json() as Promise<{ access_token: string }>;
+  return response.json() as Promise<DiscordOAuthToken>;
+}
+
+export async function refreshDiscordToken(refreshToken: string) {
+  if (!env.clientId) {
+    throw new Error("discord_client_id_missing");
+  }
+
+  if (!env.clientSecret || env.clientSecret.startsWith("coloque_")) {
+    throw new Error("discord_client_secret_missing");
+  }
+
+  const body = new URLSearchParams({
+    client_id: env.clientId,
+    client_secret: env.clientSecret,
+    grant_type: "refresh_token",
+    refresh_token: refreshToken
+  });
+
+  const response = await fetch("https://discord.com/api/v10/oauth2/token", {
+    method: "POST",
+    headers: { "Content-Type": "application/x-www-form-urlencoded" },
+    body
+  });
+
+  if (!response.ok) {
+    throw new Error(`Falha ao renovar token do Discord. Status ${response.status}.`);
+  }
+
+  return response.json() as Promise<DiscordOAuthToken>;
 }
 
 export async function fetchDiscordUser(accessToken: string) {

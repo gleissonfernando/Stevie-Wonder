@@ -1,12 +1,73 @@
 import { Router } from "express";
 import type { Request } from "express";
-import { discordAvatarUrl, exchangeCode, fetchDiscordUser, oauthUrl } from "../discord";
+import crypto from "crypto";
+import {
+  discordAvatarUrl,
+  discordGuildIconUrl,
+  exchangeCode,
+  fetchDiscordUser,
+  fetchDiscordUserGuilds,
+  isAuthorizedGuildMember,
+  oauthUrl
+} from "../discord";
 import { env } from "../env";
 import { requireAuth, signSession } from "../auth";
 import { connectMongo } from "../services/mongo";
 import { DashboardUser } from "../models/dashboardRealtime";
+import { hasGuildManagementPermission } from "../services/discordGuild";
+import { encryptToken } from "../secureTokens";
 
 export const authRoutes = Router();
+
+const oauthStateCookieName = `${env.cookieName}_discord_oauth_state`;
+
+function scopeList(value?: string) {
+  return String(value || env.discordOauthScopes)
+    .split(/\s+/)
+    .map((scope) => scope.trim())
+    .filter(Boolean);
+}
+
+function serializeDiscordGuild(guild: {
+  id: string;
+  name: string;
+  icon?: string | null;
+  owner?: boolean;
+  permissions?: string;
+}) {
+  const canManage = hasGuildManagementPermission(guild.permissions, guild.owner);
+
+  return {
+    id: guild.id,
+    name: guild.name,
+    icon: discordGuildIconUrl(guild) || null,
+    owner: Boolean(guild.owner),
+    permissions: guild.permissions || "0",
+    canManage
+  };
+}
+
+function serializeCachedGuilds(guilds: any[] = []) {
+  return guilds.map((guild) => ({
+    id: String(guild.id),
+    name: String(guild.name || guild.id),
+    icon: guild.icon || null,
+    owner: Boolean(guild.owner),
+    canManage: Boolean(guild.canManage)
+  }));
+}
+
+function serializeSessionUser(user: any, fallback: any = {}) {
+  return {
+    id: String(user?.discordId || fallback.id || ""),
+    username: String(user?.username || fallback.username || "Discord User"),
+    avatar: user?.avatar || fallback.avatar || null,
+    email: user?.email || fallback.email || null,
+    lastLoginAt: user?.lastLoginAt || fallback.lastLoginAt || null,
+    authenticated: true,
+    guilds: serializeCachedGuilds(user?.guilds || []).filter((guild) => guild.canManage)
+  };
+}
 
 function publicBaseUrl(request: Request) {
   const configuredSiteUrl = env.siteUrl.replace(/\/+$/, "");
@@ -64,7 +125,12 @@ function sessionCookieOptions(request: Request) {
 
 authRoutes.get("/discord", (request, response) => {
   try {
-    response.redirect(oauthUrl(discordRedirectUri(request)));
+    const state = crypto.randomBytes(24).toString("base64url");
+    response.cookie(oauthStateCookieName, state, {
+      ...sessionCookieBaseOptions(request),
+      maxAge: 1000 * 60 * 10
+    });
+    response.redirect(oauthUrl(discordRedirectUri(request), state));
   } catch (error) {
     const message = error instanceof Error ? error.message : "discord_auth_failed";
     const code = message === "discord_client_id_missing" ? message : "discord_auth_failed";
@@ -72,9 +138,14 @@ authRoutes.get("/discord", (request, response) => {
   }
 });
 
-authRoutes.get("/me", requireAuth, (request, response) => {
-  const { accessToken: _accessToken, ...user } = request.user!;
-  response.json({ user });
+authRoutes.get("/me", requireAuth, async (request, response, next) => {
+  try {
+    await connectMongo();
+    const dashboardUser = await DashboardUser.findOne({ discordId: request.user!.id }).lean();
+    response.json({ user: serializeSessionUser(dashboardUser, request.user) });
+  } catch (error) {
+    next(error);
+  }
 });
 
 authRoutes.get("/discord/callback", async (request, response, next) => {
@@ -85,35 +156,74 @@ authRoutes.get("/discord/callback", async (request, response, next) => {
       return;
     }
 
+    const state = String(request.query.state || "");
+    const expectedState = String(request.cookies?.[oauthStateCookieName] || "");
+    response.clearCookie(oauthStateCookieName, sessionCookieBaseOptions(request));
+
+    if (!state || !expectedState || state !== expectedState) {
+      response.redirect(`${publicBaseUrl(request)}/?error=invalid_oauth_state`);
+      return;
+    }
+
     const token = await exchangeCode(code, discordRedirectUri(request));
     const discordUser = await fetchDiscordUser(token.access_token);
+    const discordGuilds = await fetchDiscordUserGuilds(token.access_token).catch(() => null);
+
+    if (!(await isAuthorizedGuildMember(discordUser.id))) {
+      response.redirect(`${publicBaseUrl(request)}/?error=unauthorized_guild`);
+      return;
+    }
+
+    const guilds = discordGuilds ? discordGuilds.map(serializeDiscordGuild) : null;
+    const lastLoginAt = new Date();
 
     const user = {
       id: discordUser.id,
       username: discordUser.global_name || discordUser.username,
       avatar: discordAvatarUrl(discordUser),
-      accessToken: token.access_token
+      email: discordUser.email || null,
+      lastLoginAt: lastLoginAt.toISOString()
     };
 
     await connectMongo();
-    await DashboardUser.updateOne(
+    const expiresIn = Number(token.expires_in || 604800);
+    const tokenUpdate: Record<string, unknown> = {
+      discordAccessToken: encryptToken(token.access_token),
+      discordTokenExpiresAt: new Date(Date.now() + expiresIn * 1000),
+      discordScopes: scopeList(token.scope),
+      lastLoginAt
+    };
+
+    if (token.refresh_token) {
+      tokenUpdate.discordRefreshToken = encryptToken(token.refresh_token);
+    }
+
+    const profileUpdate: Record<string, unknown> = {
+      username: user.username,
+      email: discordUser.email || null,
+      avatar: user.avatar,
+      ...tokenUpdate
+    };
+
+    if (guilds) {
+      profileUpdate.guilds = guilds;
+    }
+
+    await DashboardUser.findOneAndUpdate(
       { discordId: discordUser.id },
       {
-        $set: {
-          username: user.username,
-          email: discordUser.email || null,
-          avatar: user.avatar
-        },
+        $set: profileUpdate,
         $setOnInsert: {
-          discordId: discordUser.id
+          discordId: discordUser.id,
+          firstLoginAt: lastLoginAt
         }
       },
-      { upsert: true }
+      { upsert: true, new: true }
     );
 
     const session = signSession(user);
     response.cookie(env.cookieName, session, sessionCookieOptions(request));
-    response.redirect(`${publicBaseUrl(request)}/dashboard#session=${encodeURIComponent(session)}`);
+    response.redirect(`${publicBaseUrl(request)}/dashboard`);
   } catch (error) {
     const message = error instanceof Error ? error.message : "discord_auth_failed";
     const code =
@@ -126,10 +236,12 @@ authRoutes.get("/discord/callback", async (request, response, next) => {
 
 authRoutes.post("/logout", (request, response) => {
   response.clearCookie(env.cookieName, sessionCookieBaseOptions(request));
+  response.clearCookie(oauthStateCookieName, sessionCookieBaseOptions(request));
   response.json({ ok: true });
 });
 
 authRoutes.get("/logout", (request, response) => {
   response.clearCookie(env.cookieName, sessionCookieBaseOptions(request));
+  response.clearCookie(oauthStateCookieName, sessionCookieBaseOptions(request));
   response.redirect(publicBaseUrl(request));
 });
