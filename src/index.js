@@ -40,7 +40,9 @@ async function bootstrap() {
     client.dashboardSocket = startDashboardSocket(client);
   } catch (error) {
     logger.error("Falha ao iniciar o bot", error);
-    process.exit(1);
+    if (process.env.BOT_EXIT_ON_FAILURE !== "false") {
+      process.exit(1);
+    }
   }
 }
 

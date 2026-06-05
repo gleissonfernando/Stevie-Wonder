@@ -96,6 +96,7 @@ httpServer.listen(env.port, "0.0.0.0", () => {
   console.log(`Steve Wonder API online em http://0.0.0.0:${env.port}`);
 
   if (process.env.START_DISCORD_BOT === "true") {
+    process.env.BOT_EXIT_ON_FAILURE ||= "false";
     require("../../../src/index.js");
   }
 
