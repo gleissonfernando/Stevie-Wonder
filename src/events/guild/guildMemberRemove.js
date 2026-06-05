@@ -3,7 +3,11 @@ const { sendAuditLog } = require("../../services/discord/auditLogger");
 
 module.exports = {
   name: Events.GuildMemberRemove,
-  async execute(member) {
+  async execute(member, client) {
+    if (client.dashboard?.botBridge) {
+      await client.dashboard.botBridge.sendMemberMessage(member, "leave");
+    }
+
     await sendAuditLog(member.guild, {
       title: "Membro saiu",
       action: "member_leave",

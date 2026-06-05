@@ -1,8 +1,25 @@
-# Steve Wonder
+# Ricardinn98 Dashboard
 
-Bot modular para Discord com comandos, eventos, componentes, auditoria e painel de regras.
+Bot Discord modular com dashboard web em Next.js, API Express, MongoDB, Discord OAuth2 e Socket.IO para atualizacao em tempo real.
 
-## Como Iniciar
+## Redirect URI do Discord
+
+No Discord Developer Portal, configure exatamente este redirect em:
+
+`OAuth2 > Redirects`
+
+```text
+https://steviewonder.shardweb.app/api/auth/discord/callback
+```
+
+O `.env.example` ja vem com:
+
+```env
+DISCORD_REDIRECT_URI=https://steviewonder.shardweb.app/api/auth/discord/callback
+NEXT_PUBLIC_SITE_URL=https://steviewonder.shardweb.app
+```
+
+## Como iniciar
 
 1. Instale as dependencias:
 
@@ -13,12 +30,22 @@ npm install
 2. Configure o `.env`:
 
 ```env
-DISCORD_TOKEN=seu_token
-CLIENT_ID=id_da_aplicacao
-GUILD_ID=id_do_servidor
-RULES_CHANNEL_ID=id_do_canal_de_regras
-AUDIT_LOG_CHANNEL_ID=id_do_canal_de_logs
-MONGODB_URI=mongodb://usuario:senha@host:27017/banco
+DISCORD_TOKEN=
+DISCORD_BOT_TOKEN=
+DISCORD_CLIENT_ID=
+DISCORD_CLIENT_SECRET=
+DISCORD_REDIRECT_URI=https://steviewonder.shardweb.app/api/auth/discord/callback
+MONGODB_URI=
+SESSION_SECRET=
+JWT_SECRET=
+NEXT_PUBLIC_SITE_URL=https://steviewonder.shardweb.app
+HOST=0.0.0.0
+PORT=80
+API_PORT=80
+SOCKET_PORT=80
+DASHBOARD_ENABLED=true
+TWITCH_CLIENT_ID=
+TWITCH_CLIENT_SECRET=
 ```
 
 3. Registre os slash commands:
@@ -27,41 +54,82 @@ MONGODB_URI=mongodb://usuario:senha@host:27017/banco
 npm run deploy
 ```
 
-4. Inicie o bot:
+4. Gere o build do painel:
+
+```bash
+npm run build
+```
+
+5. Inicie bot + dashboard:
 
 ```bash
 npm start
 ```
 
-## Estrutura
+O dashboard sobe no mesmo processo do bot. Na Shard Cloud use porta 80 e host `0.0.0.0`:
 
-- `src/commands`: comandos slash separados por categoria.
-- `src/events`: eventos do Discord.
-- `src/components`: botoes, modais e menus.
-- `src/services`: integracoes com Discord e banco.
-- `src/utils`: helpers compartilhados.
-- `src/config`: configuracoes e permissoes.
-- `database`: schemas e configuracoes auxiliares.
-
-## Seguranca
-
-- Nunca commite `.env`, tokens, IDs reais de canais/cargos/servidores ou secrets.
-- Use apenas placeholders em arquivos versionados.
-- Rode `npm run security:check` antes de fazer push.
-
-## Criando Comandos
-
-Crie um arquivo dentro de uma categoria em `src/commands`:
-
-```js
-const { SlashCommandBuilder } = require("discord.js");
-
-module.exports = {
-  data: new SlashCommandBuilder()
-    .setName("exemplo")
-    .setDescription("Comando de exemplo."),
-  async execute(interaction) {
-    await interaction.reply("Funcionou!");
-  }
-};
+```env
+HOST=0.0.0.0
+PORT=80
+API_PORT=80
+SOCKET_PORT=80
 ```
+
+Para rodar localmente, use:
+
+```text
+http://localhost:3000
+```
+
+```env
+PORT=3000
+API_PORT=3000
+SOCKET_PORT=3000
+```
+
+Se aparecer `502 Bad Gateway` na Shard Cloud, confira estes pontos:
+
+- O comando de start precisa ser `npm start`.
+- A aplicacao precisa escutar em `0.0.0.0`.
+- Em producao, configure `PORT=80`. `API_PORT` e `SOCKET_PORT` ficam como compatibilidade/local.
+- `DISCORD_TOKEN`/`DISCORD_BOT_TOKEN` nao podem estar vazios. Mesmo assim, o dashboard agora sobe antes do login do bot para evitar que o proxy fique sem resposta.
+
+## O que o painel entrega
+
+- Login com Discord OAuth2 usando cookies httpOnly.
+- Liberacao por dono do servidor, permissao Administrador ou cargo admin do painel.
+- Selecao de servidores onde o bot esta presente.
+- API protegida por servidor e `guildId`.
+- MongoDB com collections de usuarios, guilds, configs, auditoria e sessoes.
+- Socket.IO com eventos `dashboard:updateConfig`, `dashboard:testAlert`, `dashboard:sendNotice`, `bot:status`, `bot:ping`, `bot:error` e `bot:configUpdated`.
+- Modulos de Twitch, boas-vindas, saida, logs, cargos, verificacao, avisos, comandos, aparencia, configuracoes e diagnostico.
+- O bot le configuracoes salvas e atualiza comportamento sem reiniciar.
+
+## Scripts
+
+```bash
+npm start          # inicia bot + dashboard
+npm run bot        # inicia o bot
+npm run dev        # inicia com nodemon
+npm run build      # build do Next.js
+npm run deploy     # registra slash commands
+npm run security:check
+npm audit
+```
+
+## Estrutura principal
+
+- `app`: paginas Next.js do dashboard.
+- `components/dashboard`: componentes visuais do painel.
+- `lib`: tipos, helpers de API e definicoes dos modulos.
+- `src/web`: servidor Express, rotas API e Socket.IO.
+- `src/services/dashboard`: OAuth, permissoes, configs e ponte com o bot.
+- `src/models/dashboard.js`: models Mongoose das collections do painel.
+- `src/events`: eventos Discord integrados ao dashboard.
+
+## Observacoes de seguranca
+
+- Nunca exponha `DISCORD_TOKEN`, `DISCORD_BOT_TOKEN`, `DISCORD_CLIENT_SECRET`, `JWT_SECRET` ou `SESSION_SECRET` no frontend.
+- Use `JWT_SECRET` e `SESSION_SECRET` fortes em producao.
+- O redirect do Discord precisa bater exatamente com o valor configurado no Developer Portal.
+- As rotas `/api/guilds/:guildId/*` sempre validam a permissao do usuario naquele servidor.

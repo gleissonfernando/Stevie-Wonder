@@ -1,10 +1,29 @@
 const { EmbedBuilder, PermissionFlagsBits } = require("discord.js");
 const auditConfig = require("../../config/auditLogs");
+const { getModuleConfig, isDatabaseConnected } = require("../dashboard/configStore");
+const { colorToInt } = require("../dashboard/botBridge");
 const logger = require("../../utils/logger");
 
-async function resolveAuditChannel(guild) {
-  const channelById = auditConfig.channelId
-    ? await guild.channels.fetch(auditConfig.channelId).catch(() => null)
+const actionEventMap = {
+  member_join: "memberJoin",
+  member_leave: "memberLeave",
+  message_delete: "messageDelete",
+  message_update: "messageUpdate",
+  guild_ban_add: "bans",
+  guild_ban_remove: "bans",
+  role_create: "roleAdd",
+  role_delete: "roleRemove",
+  channel_create: "channelCreate",
+  channel_delete: "channelDelete",
+  guild_update: "guildUpdate",
+  panel_change: "panelChanges"
+};
+
+async function resolveAuditChannel(guild, dashboardLogConfig) {
+  const dashboardChannelId = dashboardLogConfig?.enabled ? dashboardLogConfig.channelId : "";
+  const primaryChannelId = dashboardChannelId || auditConfig.channelId;
+  const channelById = primaryChannelId
+    ? await guild.channels.fetch(primaryChannelId).catch(() => null)
     : null;
 
   if (channelById?.isTextBased()) return channelById;
@@ -19,7 +38,16 @@ function trim(value, maxLength = 900) {
 }
 
 async function sendAuditLog(guild, payload) {
-  const channel = await resolveAuditChannel(guild);
+  const dashboardLogConfig = isDatabaseConnected()
+    ? await getModuleConfig("logs", guild.id).catch(() => null)
+    : null;
+  const eventKey = actionEventMap[payload.action];
+
+  if (dashboardLogConfig?.enabled && eventKey && dashboardLogConfig.events?.[eventKey] === false) {
+    return;
+  }
+
+  const channel = await resolveAuditChannel(guild, dashboardLogConfig);
 
   if (!channel) {
     logger.warn(`Canal de auditoria nao encontrado: ${auditConfig.channelId || auditConfig.channelName}`);
@@ -35,7 +63,7 @@ async function sendAuditLog(guild, payload) {
   }
 
   const embed = new EmbedBuilder()
-    .setColor(payload.color || 0x5865f2)
+    .setColor(dashboardLogConfig?.enabled ? colorToInt(dashboardLogConfig.embedColor) : payload.color || 0x5865f2)
     .setTitle(payload.title)
     .setDescription(payload.description || null)
     .setTimestamp(new Date())
@@ -49,7 +77,15 @@ async function sendAuditLog(guild, payload) {
     });
   }
 
-  await channel.send({ embeds: [embed] }).catch((error) => {
+  const content = dashboardLogConfig?.enabled && dashboardLogConfig.mentionAdminRole && dashboardLogConfig.adminRoleId
+    ? `<@&${dashboardLogConfig.adminRoleId}>`
+    : "";
+
+  await channel.send({
+    content,
+    embeds: [embed],
+    allowedMentions: { roles: dashboardLogConfig?.adminRoleId ? [dashboardLogConfig.adminRoleId] : [] }
+  }).catch((error) => {
     logger.warn(`Nao foi possivel enviar auditoria: ${error.message}`);
   });
 }

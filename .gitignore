@@ -3,6 +3,7 @@
 !.env.example
 
 node_modules/
+.next/
 dashboard/frontend/node_modules/
 
 logs/

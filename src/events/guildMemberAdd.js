@@ -60,6 +60,14 @@ module.exports = {
 
   async execute(member, client) {
     try {
+      if (client.dashboard?.botBridge) {
+        await client.dashboard.botBridge.assignConfiguredJoinRole(member);
+        const sentByDashboard = await client.dashboard.botBridge.sendMemberMessage(member, "welcome");
+        if (sentByDashboard) {
+          return;
+        }
+      }
+
       await assignWelcomeRole(member, welcomeConfig);
 
       await sendAuditLog(member.guild, {

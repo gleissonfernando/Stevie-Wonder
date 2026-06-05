@@ -1,0 +1,55 @@
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+:root {
+  color-scheme: dark;
+  background: #07090f;
+  color: #f5f7fb;
+}
+
+* {
+  box-sizing: border-box;
+}
+
+html {
+  min-height: 100%;
+  background: #07090f;
+}
+
+body {
+  min-height: 100%;
+  margin: 0;
+  background: linear-gradient(180deg, #0a0d15 0%, #07090f 48%, #05070c 100%);
+  font-family: Arial, Helvetica, sans-serif;
+}
+
+button,
+input,
+select,
+textarea {
+  font: inherit;
+}
+
+button:disabled,
+input:disabled,
+select:disabled,
+textarea:disabled {
+  cursor: not-allowed;
+  opacity: 0.65;
+}
+
+.dashboard-scrollbar {
+  scrollbar-color: #2a3042 transparent;
+  scrollbar-width: thin;
+}
+
+.dashboard-scrollbar::-webkit-scrollbar {
+  height: 10px;
+  width: 10px;
+}
+
+.dashboard-scrollbar::-webkit-scrollbar-thumb {
+  background: #2a3042;
+  border-radius: 999px;
+}

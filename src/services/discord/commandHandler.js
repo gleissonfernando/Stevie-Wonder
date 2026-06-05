@@ -15,6 +15,7 @@ function loadCommands(client) {
       continue;
     }
 
+    command.category = path.basename(path.dirname(file));
     client.commands.set(command.data.name, command);
   }
 

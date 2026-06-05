@@ -2,10 +2,10 @@ const mongoose = require("mongoose");
 const logger = require("../../utils/logger");
 
 async function connectDatabase() {
-  const uri = process.env.MONGO_URI;
+  const uri = process.env.MONGO_URI || process.env.MONGODB_URI;
 
   if (!uri) {
-    logger.warn("MONGO_URI nao configurado. O bot iniciara sem banco de dados.");
+    logger.warn("MONGO_URI/MONGODB_URI nao configurado. O bot iniciara sem banco de dados.");
     return null;
   }
 
