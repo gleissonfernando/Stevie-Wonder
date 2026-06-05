@@ -4,4 +4,4 @@ LANGUAGE=node
 MEMORY=1024
 VERSION=recommended
 SUBDOMAIN=steviewonder
-CUSTOM_COMMAND=npm run build && npm run start
+CUSTOM_COMMAND=npm run start
