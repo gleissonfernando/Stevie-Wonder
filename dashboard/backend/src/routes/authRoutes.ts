@@ -3,6 +3,8 @@ import type { Request } from "express";
 import { discordAvatarUrl, exchangeCode, fetchDiscordUser, oauthUrl } from "../discord";
 import { env } from "../env";
 import { requireAuth, signSession } from "../auth";
+import { connectMongo } from "../services/mongo";
+import { DashboardUser } from "../models/dashboardRealtime";
 
 export const authRoutes = Router();
 
@@ -92,6 +94,22 @@ authRoutes.get("/discord/callback", async (request, response, next) => {
       avatar: discordAvatarUrl(discordUser),
       accessToken: token.access_token
     };
+
+    await connectMongo();
+    await DashboardUser.updateOne(
+      { discordId: discordUser.id },
+      {
+        $set: {
+          username: user.username,
+          email: discordUser.email || null,
+          avatar: user.avatar
+        },
+        $setOnInsert: {
+          discordId: discordUser.id
+        }
+      },
+      { upsert: true }
+    );
 
     const session = signSession(user);
     response.cookie(env.cookieName, session, sessionCookieOptions(request));

@@ -1,6 +1,5 @@
 import { Router } from "express";
 import { z } from "zod";
-import { prisma } from "../prisma";
 import { requireAuth } from "../auth";
 import {
   discordGuildIconUrl,
@@ -10,20 +9,39 @@ import { env } from "../env";
 import {
   assertCanManageGuild,
   fetchGuild,
-  hasAdministratorPermission,
+  hasGuildManagementPermission,
   listDiscordAlertChannels,
   sendDiscordChannelMessage,
   validateDiscordAlertChannel
 } from "../services/discordGuild";
 import { extractTwitchLogin, getTwitchStreamByUserId, getTwitchUserByLogin } from "../services/twitch";
+import { ensureDashboardGuild, recordGuildLog, serializeGuildLog } from "../services/dashboardData";
+import { emitBotEvent, emitGuildEvent } from "../socket/dashboardSocket";
+import { connectMongo } from "../services/mongo";
+import { TwitchLiveConfig } from "../models/twitchLiveConfig";
 
 export const socialLiveRoutes = Router();
+
+const DEFAULT_TWITCH_ALERT_URL = "https://www.twitch.tv/ricardinn98";
+const LIVE_ALERT_DEFAULTS = {
+  customMessage: "@everyone {streamer} esta AO VIVO na Twitch!\n{url}",
+  embedTitle: "{streamer} esta AO VIVO!",
+  embedDescription: "**{title}**\n\nCategoria: {category}\nViewers: {viewers}\nCanal: {url}",
+  embedColor: "#9146FF",
+  buttonLabel: "Assistir agora"
+} as const;
 
 const alertSchema = z.object({
   guildId: z.string().trim().regex(/^\d{17,20}$/),
   streamerUrl: z.string().trim().min(8).max(240),
   textChannelId: z.string().trim().regex(/^\d{17,20}$/),
+  mentionRoleId: z.string().trim().regex(/^\d{17,20}$/).optional().or(z.literal("")),
   customMessage: z.string().trim().min(3).max(1000),
+  embedTitle: z.string().trim().max(120).optional().or(z.literal("")),
+  embedDescription: z.string().trim().max(1000).optional().or(z.literal("")),
+  embedColor: z.string().trim().regex(/^#?[0-9a-fA-F]{6}$/).default("#9146FF"),
+  thumbnailUrl: z.string().trim().url().optional().or(z.literal("")),
+  buttonLabel: z.string().trim().max(80).default("Assistir Live"),
   enabled: z.boolean().default(true)
 });
 
@@ -35,61 +53,113 @@ const updateAlertSchema = alertSchema
 
 function serializeAlert(alert: any) {
   return {
-    id: alert.id,
-    userIdDiscord: alert.userIdDiscord,
+    id: String(alert._id || alert.id),
+    userIdDiscord: alert.userIdDiscord || alert.createdBy,
     guildId: alert.guildId,
-    streamerUrl: alert.streamerUrl,
-    streamerName: alert.streamerName,
+    streamerUrl: alert.streamerUrl || alert.liveUrl || DEFAULT_TWITCH_ALERT_URL,
+    streamerName: alert.streamerName || alert.twitchDisplayName || alert.twitchChannelName,
     twitchUserId: alert.twitchUserId,
     twitchAvatarUrl: alert.twitchAvatarUrl,
-    textChannelId: alert.textChannelId,
-    customMessage: alert.customMessage,
+    textChannelId: alert.textChannelId || alert.discordChannelId,
+    mentionRoleId: alert.mentionRoleId || "",
+    customMessage: alert.customMessage || alert.alertMessage || LIVE_ALERT_DEFAULTS.customMessage,
+    embedTitle: alert.embedTitle || LIVE_ALERT_DEFAULTS.embedTitle,
+    embedDescription: alert.embedDescription || LIVE_ALERT_DEFAULTS.embedDescription,
+    embedColor: alert.embedColor || LIVE_ALERT_DEFAULTS.embedColor,
+    thumbnailUrl: alert.thumbnailUrl || alert.bannerUrl || "",
+    buttonLabel: alert.buttonLabel || LIVE_ALERT_DEFAULTS.buttonLabel,
     enabled: alert.enabled,
-    lastStreamId: alert.lastStreamId,
-    lastLiveStartedAt: alert.lastLiveStartedAt,
+    lastStreamId: alert.lastStreamId || alert.lastLiveId,
+    lastLiveStartedAt: alert.lastLiveStartedAt || alert.lastLiveStartedAt,
     createdAt: alert.createdAt,
     updatedAt: alert.updatedAt
   };
 }
 
-function renderCustomMessage(template: string, streamerName: string, streamerUrl: string) {
-  return template
-    .replaceAll("{streamer}", streamerName)
-    .replaceAll("{url}", streamerUrl);
+function valueOrDefault(value: string | null | undefined, fallback: string) {
+  const normalized = value?.trim();
+  return normalized || fallback;
 }
 
-function streamThumbnail(url: string) {
+function renderAlertTemplate(template: string, values: Record<string, string>) {
+  return Object.entries(values).reduce(
+    (message, [key, value]) => message.replaceAll(`{${key}}`, value),
+    template
+  );
+}
+
+function normalizeColor(value?: string | null) {
+  const color = value || LIVE_ALERT_DEFAULTS.embedColor;
+  return color.startsWith("#") ? color.toUpperCase() : `#${color.toUpperCase()}`;
+}
+
+function colorToDiscordInt(value?: string | null) {
+  const parsed = Number.parseInt(normalizeColor(value).replace("#", ""), 16);
+  return Number.isNaN(parsed) ? Number.parseInt(LIVE_ALERT_DEFAULTS.embedColor.replace("#", ""), 16) : parsed;
+}
+
+function streamThumbnail(url?: string | null) {
+  if (!url) return "";
   return url.replace("{width}", "1280").replace("{height}", "720");
 }
 
 function buildLiveAlertBody(alert: any, stream: any) {
-  const url = alert.streamerUrl || `https://www.twitch.tv/${stream.user_login || alert.streamerName}`;
-  const streamerName = stream.user_name || alert.streamerName;
+  const fallbackLogin = stream.user_login || alert.twitchChannelName || alert.streamerName;
+  const url =
+    alert.streamerUrl ||
+    alert.liveUrl ||
+    (fallbackLogin ? `https://www.twitch.tv/${fallbackLogin}` : DEFAULT_TWITCH_ALERT_URL);
+  const streamerName = stream.user_name || alert.streamerName || alert.twitchDisplayName || alert.twitchChannelName;
   const liveTitle = stream.title || `${streamerName} is now live`;
-  const message = renderCustomMessage(alert.customMessage, streamerName, url);
+  const category = stream.game_name || "Sem categoria";
+  const viewers = String(stream.viewer_count ?? 0);
+  const templateValues = {
+    streamer: streamerName,
+    url,
+    title: liveTitle,
+    category,
+    viewers,
+    login: fallbackLogin || streamerName
+  };
+  const roleMention = alert.mentionRoleId ? `<@&${alert.mentionRoleId}> ` : "";
+  const message = `${roleMention}${renderAlertTemplate(
+    valueOrDefault(alert.customMessage || alert.alertMessage, LIVE_ALERT_DEFAULTS.customMessage),
+    templateValues
+  )}`.trim();
+  const embedTitle = renderAlertTemplate(valueOrDefault(alert.embedTitle, LIVE_ALERT_DEFAULTS.embedTitle), templateValues);
+  const description = renderAlertTemplate(
+    valueOrDefault(alert.embedDescription, LIVE_ALERT_DEFAULTS.embedDescription),
+    templateValues
+  );
+  const thumbnailUrl = alert.thumbnailUrl || alert.bannerUrl || alert.twitchAvatarUrl || "";
+  const imageUrl = streamThumbnail(stream.thumbnail_url);
 
   return {
     content: message,
     allowed_mentions: { parse: ["everyone", "roles", "users"] },
     embeds: [
       {
-        color: 0x9146ff,
+        color: colorToDiscordInt(alert.embedColor),
         author: {
-          name: `${streamerName} is now live on Twitch!`,
+          name: embedTitle,
           icon_url: alert.twitchAvatarUrl || undefined
         },
-        description: `@${stream.user_login || alert.streamerName} - ${liveTitle}`,
+        description,
         fields: [
-          { name: "Game", value: stream.game_name || "No category", inline: true },
-          { name: "Viewers", value: String(stream.viewer_count ?? 0), inline: true }
+          { name: "Titulo", value: liveTitle, inline: false },
+          { name: "Categoria", value: category, inline: true },
+          { name: "Viewers", value: viewers, inline: true }
         ],
-        image: { url: streamThumbnail(stream.thumbnail_url) },
+        thumbnail: thumbnailUrl ? { url: thumbnailUrl } : undefined,
+        image: imageUrl ? { url: imageUrl } : undefined,
         footer: {
-          text: `${stream.user_login || streamerName} lives - Hoje as ${new Intl.DateTimeFormat("pt-BR", {
+          text: `${fallbackLogin || streamerName} lives - Hoje as ${new Intl.DateTimeFormat("pt-BR", {
             hour: "2-digit",
             minute: "2-digit"
           }).format(new Date())}`
-        }
+        },
+        timestamp: new Date().toISOString(),
+        url
       }
     ],
     components: [
@@ -99,7 +169,7 @@ function buildLiveAlertBody(alert: any, stream: any) {
           {
             type: 2,
             style: 5,
-            label: "Watch Stream",
+            label: alert.buttonLabel || LIVE_ALERT_DEFAULTS.buttonLabel,
             url
           }
         ]
@@ -108,9 +178,38 @@ function buildLiveAlertBody(alert: any, stream: any) {
   };
 }
 
+async function publishTwitchChange(
+  action: "created" | "updated" | "toggled" | "deleted" | "live_sent",
+  guildId: string,
+  alert: any,
+  userId?: string
+) {
+  const serialized = alert ? serializeAlert(alert) : null;
+  const streamerName = serialized?.streamerName || alert?.twitchChannelName || "canal";
+  const log = await recordGuildLog({
+    guildId,
+    type: action === "live_sent" ? "live" : "settings",
+    action: `twitch_channel_${action}`,
+    message:
+      action === "live_sent"
+        ? `Alerta de live enviado para ${streamerName}.`
+        : `Canal Twitch ${streamerName} ${action}.`,
+    userId: userId || null,
+    metadata: serialized
+  });
+
+  emitGuildEvent(guildId, `twitch:channel.${action}`, { alert: serialized });
+  emitGuildEvent(guildId, "guild:log", { log: serializeGuildLog(log) });
+  emitBotEvent("dashboard:twitchChannelChanged", { guildId, action, alert: serialized });
+}
+
 async function resolveAuthorizedGuilds(userId: string, accessToken?: string) {
   if (env.authorizedUserIds.includes(userId) && env.guildId) {
     const guild = await fetchGuild(env.guildId);
+    await ensureDashboardGuild(guild.id, {
+      name: guild.name || guild.id,
+      icon: guild.icon ? discordGuildIconUrl({ id: guild.id, name: guild.name || guild.id, icon: guild.icon }) : null
+    }).catch(() => null);
 
     return [
       {
@@ -130,14 +229,25 @@ async function resolveAuthorizedGuilds(userId: string, accessToken?: string) {
 
   const guilds = await fetchDiscordUserGuilds(accessToken);
 
-  return guilds
-    .filter((guild) => hasAdministratorPermission(guild.permissions, guild.owner))
+  const authorizedGuilds = guilds
+    .filter((guild) => hasGuildManagementPermission(guild.permissions, guild.owner))
     .map((guild) => ({
       id: guild.id,
       name: guild.name,
       icon: discordGuildIconUrl(guild),
       owner: Boolean(guild.owner)
     }));
+
+  await Promise.all(
+    authorizedGuilds.map((guild) =>
+      ensureDashboardGuild(guild.id, {
+        name: guild.name,
+        icon: guild.icon
+      }).catch(() => null)
+    )
+  );
+
+  return authorizedGuilds;
 }
 
 async function sendLiveAlertIfNeeded(alert: any) {
@@ -150,17 +260,34 @@ async function sendLiveAlertIfNeeded(alert: any) {
     return false;
   }
 
-  await validateDiscordAlertChannel(alert.textChannelId, alert.guildId);
-  await sendDiscordChannelMessage(alert.textChannelId, buildLiveAlertBody(alert, live));
+  const textChannelId = alert.textChannelId || alert.discordChannelId;
+  await validateDiscordAlertChannel(textChannelId, alert.guildId, alert.mentionRoleId || undefined);
+  await sendDiscordChannelMessage(textChannelId, buildLiveAlertBody(alert, live));
 
-  await prisma.liveAlertConfig.update({
-    where: { id: alert.id },
-    data: {
-      lastStreamId: live.id,
-      lastLiveStartedAt: new Date(live.started_at),
-      lastAlertSentAt: new Date()
-    }
-  });
+  const updated = await TwitchLiveConfig.findByIdAndUpdate(
+    alert._id || alert.id,
+    {
+      $set: {
+        alertMessage: valueOrDefault(alert.alertMessage || alert.customMessage, LIVE_ALERT_DEFAULTS.customMessage),
+        customMessage: valueOrDefault(alert.customMessage || alert.alertMessage, LIVE_ALERT_DEFAULTS.customMessage),
+        embedTitle: valueOrDefault(alert.embedTitle, LIVE_ALERT_DEFAULTS.embedTitle),
+        embedDescription: valueOrDefault(alert.embedDescription, LIVE_ALERT_DEFAULTS.embedDescription),
+        embedColor: normalizeColor(alert.embedColor),
+        buttonLabel: valueOrDefault(alert.buttonLabel, LIVE_ALERT_DEFAULTS.buttonLabel),
+        lastStreamId: live.id,
+        lastLiveId: live.id,
+        lastLiveStartedAt: new Date(live.started_at),
+        lastAlertSentAt: new Date(),
+        lastAlertUpdatedAt: new Date(),
+        lastIsLive: true
+      }
+    },
+    { new: true }
+  ).lean();
+
+  if (updated) {
+    await publishTwitchChange("live_sent", alert.guildId, updated).catch(() => null);
+  }
 
   return true;
 }
@@ -193,10 +320,10 @@ socialLiveRoutes.get("/", requireAuth, async (request, response, next) => {
       await assertCanManageGuild(request.user!.id, guildId);
     }
 
-    const alerts = await prisma.liveAlertConfig.findMany({
-      where: guildId ? { guildId } : { userIdDiscord: request.user!.id },
-      orderBy: { createdAt: "desc" }
-    });
+    await connectMongo();
+    const alerts = await TwitchLiveConfig.find(guildId ? { guildId } : { createdBy: request.user!.id })
+      .sort({ createdAt: -1 })
+      .lean();
 
     response.json({ alerts: alerts.map(serializeAlert), twitch: alerts.map(serializeAlert) });
   } catch (error) {
@@ -224,7 +351,7 @@ socialLiveRoutes.post("/twitch", requireAuth, async (request, response, next) =>
   try {
     const payload = alertSchema.parse(request.body);
     await assertCanManageGuild(request.user!.id, payload.guildId);
-    await validateDiscordAlertChannel(payload.textChannelId, payload.guildId);
+    await validateDiscordAlertChannel(payload.textChannelId, payload.guildId, payload.mentionRoleId || undefined);
 
     const login = extractTwitchLogin(payload.streamerUrl);
     if (!login) {
@@ -240,20 +367,31 @@ socialLiveRoutes.post("/twitch", requireAuth, async (request, response, next) =>
       return;
     }
 
-    const alert = await prisma.liveAlertConfig.create({
-      data: {
-        userIdDiscord: request.user!.id,
-        guildId: payload.guildId,
-        streamerUrl: `https://www.twitch.tv/${channel.login}`,
-        streamerName: channel.display_name || channel.login,
-        twitchUserId: channel.id,
-        twitchAvatarUrl: channel.profile_image_url,
-        textChannelId: payload.textChannelId,
-        customMessage: payload.customMessage,
-        enabled: payload.enabled
-      }
+    await connectMongo();
+    const savedCustomMessage = valueOrDefault(payload.customMessage, LIVE_ALERT_DEFAULTS.customMessage);
+    const alert = await TwitchLiveConfig.create({
+      guildId: payload.guildId,
+      platform: "twitch",
+      twitchChannelName: channel.login,
+      liveUrl: `https://www.twitch.tv/${channel.login}`,
+      twitchDisplayName: channel.display_name || channel.login,
+      twitchUserId: channel.id,
+      twitchAvatarUrl: channel.profile_image_url,
+      discordChannelId: payload.textChannelId,
+      mentionRoleId: payload.mentionRoleId || null,
+      alertMessage: savedCustomMessage,
+      customMessage: savedCustomMessage,
+      embedTitle: valueOrDefault(payload.embedTitle, LIVE_ALERT_DEFAULTS.embedTitle),
+      embedDescription: valueOrDefault(payload.embedDescription, LIVE_ALERT_DEFAULTS.embedDescription),
+      embedColor: normalizeColor(payload.embedColor),
+      thumbnailUrl: payload.thumbnailUrl || null,
+      bannerUrl: payload.thumbnailUrl || null,
+      buttonLabel: valueOrDefault(payload.buttonLabel, LIVE_ALERT_DEFAULTS.buttonLabel),
+      enabled: payload.enabled,
+      createdBy: request.user!.id
     });
 
+    await publishTwitchChange("created", alert.guildId, alert, request.user!.id);
     response.status(201).json({ alert: serializeAlert(alert), live: serializeAlert(alert) });
   } catch (error) {
     next(error);
@@ -263,7 +401,8 @@ socialLiveRoutes.post("/twitch", requireAuth, async (request, response, next) =>
 socialLiveRoutes.put("/twitch/:id", requireAuth, async (request, response, next) => {
   try {
     const id = String(request.params.id);
-    const existing = await prisma.liveAlertConfig.findUnique({ where: { id } });
+    await connectMongo();
+    const existing = await TwitchLiveConfig.findById(id);
     if (!existing) {
       response.status(404).json({ error: "Alerta de live nao encontrado." });
       return;
@@ -272,18 +411,19 @@ socialLiveRoutes.put("/twitch/:id", requireAuth, async (request, response, next)
     await assertCanManageGuild(request.user!.id, existing.guildId);
     const payload = updateAlertSchema.parse(request.body);
     const guildId = payload.guildId || existing.guildId;
-    const textChannelId = payload.textChannelId || existing.textChannelId;
+    const textChannelId = payload.textChannelId || existing.discordChannelId;
+    const mentionRoleId = payload.mentionRoleId ?? existing.mentionRoleId ?? "";
 
     if (payload.guildId) {
       await assertCanManageGuild(request.user!.id, payload.guildId);
     }
 
-    if (payload.textChannelId || payload.guildId) {
-      await validateDiscordAlertChannel(textChannelId, guildId);
+    if (payload.textChannelId || payload.guildId || payload.mentionRoleId !== undefined) {
+      await validateDiscordAlertChannel(textChannelId, guildId, mentionRoleId || undefined);
     }
 
     let twitchData = {};
-    if (payload.streamerUrl && payload.streamerUrl !== existing.streamerUrl) {
+    if (payload.streamerUrl && payload.streamerUrl !== existing.liveUrl) {
       const login = extractTwitchLogin(payload.streamerUrl);
       if (!login) {
         response.status(400).json({ error: "Informe uma URL valida da Twitch." });
@@ -298,8 +438,9 @@ socialLiveRoutes.put("/twitch/:id", requireAuth, async (request, response, next)
       }
 
       twitchData = {
-        streamerUrl: `https://www.twitch.tv/${channel.login}`,
-        streamerName: channel.display_name || channel.login,
+        liveUrl: `https://www.twitch.tv/${channel.login}`,
+        twitchChannelName: channel.login,
+        twitchDisplayName: channel.display_name || channel.login,
         twitchUserId: channel.id,
         twitchAvatarUrl: channel.profile_image_url,
         lastStreamId: null,
@@ -308,17 +449,50 @@ socialLiveRoutes.put("/twitch/:id", requireAuth, async (request, response, next)
       };
     }
 
-    const alert = await prisma.liveAlertConfig.update({
-      where: { id: existing.id },
-      data: {
-        ...twitchData,
-        guildId,
-        textChannelId,
-        customMessage: payload.customMessage ?? existing.customMessage,
-        enabled: payload.enabled ?? existing.enabled
-      }
-    });
+    const nextCustomMessage =
+      payload.customMessage !== undefined
+        ? valueOrDefault(payload.customMessage, LIVE_ALERT_DEFAULTS.customMessage)
+        : valueOrDefault(existing.customMessage || existing.alertMessage, LIVE_ALERT_DEFAULTS.customMessage);
+    const nextEmbedTitle =
+      payload.embedTitle !== undefined
+        ? valueOrDefault(payload.embedTitle, LIVE_ALERT_DEFAULTS.embedTitle)
+        : valueOrDefault(existing.embedTitle, LIVE_ALERT_DEFAULTS.embedTitle);
+    const nextEmbedDescription =
+      payload.embedDescription !== undefined
+        ? valueOrDefault(payload.embedDescription, LIVE_ALERT_DEFAULTS.embedDescription)
+        : valueOrDefault(existing.embedDescription, LIVE_ALERT_DEFAULTS.embedDescription);
+    const nextEmbedColor = payload.embedColor
+      ? normalizeColor(payload.embedColor)
+      : normalizeColor(existing.embedColor);
+    const nextButtonLabel =
+      payload.buttonLabel !== undefined
+        ? valueOrDefault(payload.buttonLabel, LIVE_ALERT_DEFAULTS.buttonLabel)
+        : valueOrDefault(existing.buttonLabel, LIVE_ALERT_DEFAULTS.buttonLabel);
 
+    const alert = await TwitchLiveConfig.findByIdAndUpdate(
+      existing._id,
+      {
+        $set: {
+          ...twitchData,
+          guildId,
+          discordChannelId: textChannelId,
+          mentionRoleId: mentionRoleId || null,
+          alertMessage: nextCustomMessage,
+          customMessage: nextCustomMessage,
+          embedTitle: nextEmbedTitle,
+          embedDescription: nextEmbedDescription,
+          embedColor: nextEmbedColor,
+          thumbnailUrl: payload.thumbnailUrl ?? existing.thumbnailUrl,
+          bannerUrl: payload.thumbnailUrl ?? existing.bannerUrl,
+          buttonLabel: nextButtonLabel,
+          enabled: payload.enabled ?? existing.enabled
+        }
+      },
+      { new: true }
+    ).lean();
+
+    const updatedAlert = alert as any;
+    await publishTwitchChange("updated", updatedAlert.guildId, updatedAlert, request.user!.id);
     response.json({ alert: serializeAlert(alert), live: serializeAlert(alert) });
   } catch (error) {
     next(error);
@@ -328,7 +502,8 @@ socialLiveRoutes.put("/twitch/:id", requireAuth, async (request, response, next)
 socialLiveRoutes.patch("/twitch/:id/toggle", requireAuth, async (request, response, next) => {
   try {
     const id = String(request.params.id);
-    const existing = await prisma.liveAlertConfig.findUnique({ where: { id } });
+    await connectMongo();
+    const existing = await TwitchLiveConfig.findById(id);
     if (!existing) {
       response.status(404).json({ error: "Alerta de live nao encontrado." });
       return;
@@ -336,11 +511,10 @@ socialLiveRoutes.patch("/twitch/:id/toggle", requireAuth, async (request, respon
 
     await assertCanManageGuild(request.user!.id, existing.guildId);
     const enabled = Boolean(request.body?.enabled);
-    const alert = await prisma.liveAlertConfig.update({
-      where: { id: existing.id },
-      data: { enabled }
-    });
+    const alert = await TwitchLiveConfig.findByIdAndUpdate(existing._id, { $set: { enabled } }, { new: true }).lean();
 
+    const toggledAlert = alert as any;
+    await publishTwitchChange("toggled", toggledAlert.guildId, toggledAlert, request.user!.id);
     response.json({ alert: serializeAlert(alert), live: serializeAlert(alert) });
   } catch (error) {
     next(error);
@@ -350,14 +524,16 @@ socialLiveRoutes.patch("/twitch/:id/toggle", requireAuth, async (request, respon
 socialLiveRoutes.delete("/twitch/:id", requireAuth, async (request, response, next) => {
   try {
     const id = String(request.params.id);
-    const existing = await prisma.liveAlertConfig.findUnique({ where: { id } });
+    await connectMongo();
+    const existing = await TwitchLiveConfig.findById(id);
     if (!existing) {
       response.status(404).json({ error: "Alerta de live nao encontrado." });
       return;
     }
 
     await assertCanManageGuild(request.user!.id, existing.guildId);
-    await prisma.liveAlertConfig.delete({ where: { id: existing.id } });
+    await TwitchLiveConfig.deleteOne({ _id: existing._id });
+    await publishTwitchChange("deleted", existing.guildId, existing, request.user!.id);
     response.json({ ok: true });
   } catch (error) {
     next(error);
@@ -371,7 +547,8 @@ socialLiveRoutes.post("/check", async (request, response, next) => {
       return;
     }
 
-    const alerts = await prisma.liveAlertConfig.findMany({ where: { enabled: true } });
+    await connectMongo();
+    const alerts = await TwitchLiveConfig.find({ enabled: true }).lean();
     let sent = 0;
 
     for (const alert of alerts) {

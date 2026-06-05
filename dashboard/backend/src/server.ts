@@ -13,6 +13,7 @@ import { socialLiveRoutes } from "./routes/socialLiveRoutes";
 import { twitchRoutes } from "./routes/twitchRoutes";
 import { twitchSubRoutes } from "./routes/twitchSubRoutes";
 import { dashboardRealtimeRoutes } from "./routes/dashboardRealtimeRoutes";
+import { dashboardSyncRoutes } from "./routes/dashboardSyncRoutes";
 import { env } from "./env";
 import { createDashboardSocket } from "./socket/dashboardSocket";
 
@@ -59,6 +60,7 @@ app.use("/api/lives", socialLiveRoutes);
 app.use("/api/twitch", twitchRoutes);
 app.use("/api/twitch-subs", twitchSubRoutes);
 app.use("/api/realtime", dashboardRealtimeRoutes);
+app.use("/api/dashboard", dashboardSyncRoutes);
 app.use("/", realtimeRoutes);
 
 const frontendDistPath = path.resolve(process.cwd(), "dashboard/frontend/dist");

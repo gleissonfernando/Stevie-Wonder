@@ -9,13 +9,41 @@ import { connectMongo } from "../services/mongo";
 import { assertCanManageLives, validateDiscordAlertChannel } from "../services/discordGuild";
 import { DashboardActionLog, DashboardConfig } from "../models/dashboardRealtime";
 import { realtimeSchemas, type SiteActionName } from "../validators/realtimeValidators";
+import {
+  buildGuildOverview,
+  ensureDashboardGuild,
+  incrementGuildCounter,
+  recordGuildLog,
+  serializeGuild,
+  serializeGuildLog
+} from "../services/dashboardData";
 
 const siteEvents = Object.keys(realtimeSchemas) as SiteActionName[];
 const pendingActions = new Map<string, { userId: string; guildId: string; action: string }>();
+const snowflakePattern = /^\d{17,20}$/;
+let dashboardIo: Server | null = null;
+
+export function emitGuildEvent(guildId: string, eventName: string, payload: unknown) {
+  const data: Record<string, unknown> =
+    payload && typeof payload === "object" ? (payload as Record<string, unknown>) : { payload };
+  dashboardIo?.to(`guild:${guildId}`).emit(eventName, { guildId, ...data });
+}
+
+export function emitBotEvent(eventName: string, payload: unknown) {
+  dashboardIo?.to("bots").emit(eventName, payload);
+}
+
+export function getDashboardIo() {
+  return dashboardIo;
+}
 
 function parseUserFromSocket(socket: Socket) {
   const cookies = cookie.parse(socket.handshake.headers.cookie || "");
-  const token = cookies[env.cookieName];
+  const authToken =
+    typeof socket.handshake.auth?.token === "string"
+      ? socket.handshake.auth.token.replace(/^Bearer\s+/i, "")
+      : "";
+  const token = cookies[env.cookieName] || authToken;
   if (!token) return null;
   return jwt.verify(token, env.jwtSecret) as AuthUser;
 }
@@ -82,8 +110,12 @@ async function markResult(event: "bot:success" | "bot:error", payload: any) {
 
 export function createDashboardSocket(server: HttpServer) {
   const io = new Server(server, {
-    cors: { origin: env.siteUrl, credentials: true }
+    cors: {
+      origin: [env.siteUrl, env.publicSiteUrl, "http://localhost:3001", "http://localhost:4000"],
+      credentials: true
+    }
   });
+  dashboardIo = io;
 
   io.use((socket, next) => {
     if (socket.handshake.auth?.role === "bot") {
@@ -126,6 +158,57 @@ export function createDashboardSocket(server: HttpServer) {
         io.emit("bot:statusUpdate", { ...payload, online: true, at: new Date().toISOString() });
       });
 
+      socket.on("bot:guildStats", async (payload) => {
+        try {
+          const guildId = String(payload?.guildId || "");
+          if (!snowflakePattern.test(guildId)) return;
+
+          const guild = await ensureDashboardGuild(guildId, {
+            name: typeof payload.name === "string" ? payload.name : undefined,
+            icon: typeof payload.icon === "string" ? payload.icon : null,
+            memberCount: Number.isFinite(payload?.memberCount) ? Number(payload.memberCount) : undefined,
+            onlineCount: Number.isFinite(payload?.onlineCount) ? Number(payload.onlineCount) : undefined,
+            botCount: Number.isFinite(payload?.botCount) ? Number(payload.botCount) : undefined,
+            botOnline: true
+          });
+
+          io.to(`guild:${guildId}`).emit("guild:stats", { guildId, stats: serializeGuild(guild) });
+        } catch (error) {
+          console.warn("Falha ao receber estatisticas do bot.", error);
+        }
+      });
+
+      socket.on("bot:auditLog", async (payload) => {
+        try {
+          const guildId = String(payload?.guildId || "");
+          if (!snowflakePattern.test(guildId)) return;
+
+          if (payload?.counter === "member_join") {
+            await incrementGuildCounter(guildId, "newMemberCount");
+          }
+
+          if (payload?.counter === "member_leave") {
+            await incrementGuildCounter(guildId, "leaveCount");
+          }
+
+          const log = await recordGuildLog({
+            guildId,
+            type: String(payload?.type || "discord"),
+            action: String(payload?.action || "audit"),
+            message: String(payload?.message || "Evento recebido do bot."),
+            userId: typeof payload?.userId === "string" ? payload.userId : null,
+            targetId: typeof payload?.targetId === "string" ? payload.targetId : null,
+            metadata: payload?.metadata || null
+          });
+
+          const overview = await buildGuildOverview(guildId);
+          io.to(`guild:${guildId}`).emit("guild:log", { guildId, log: serializeGuildLog(log) });
+          io.to(`guild:${guildId}`).emit("guild:overview", { guildId, overview });
+        } catch (error) {
+          console.warn("Falha ao persistir log do bot.", error);
+        }
+      });
+
       socket.on("disconnect", () => {
         io.emit("bot:statusUpdate", { online: false, at: new Date().toISOString() });
       });
@@ -135,6 +218,22 @@ export function createDashboardSocket(server: HttpServer) {
     const user = socket.data.user as AuthUser;
     socket.join(`user:${user.id}`);
     socket.emit("bot:statusUpdate", { online: io.sockets.adapter.rooms.get("bots")?.size ? true : false });
+
+    socket.on("dashboard:joinGuild", async (payload, ack) => {
+      try {
+        const guildId = String(payload?.guildId || "");
+        if (!snowflakePattern.test(guildId)) throw new Error("Servidor invalido.");
+
+        await assertCanManageLives(user.id, guildId);
+        socket.join(`guild:${guildId}`);
+        const overview = await buildGuildOverview(guildId);
+        socket.emit("guild:overview", { guildId, overview });
+        ack?.({ ok: true });
+      } catch (error) {
+        const message = error instanceof Error ? error.message : "Falha ao entrar no servidor.";
+        ack?.({ ok: false, error: message });
+      }
+    });
 
     for (const action of siteEvents) {
       socket.on(action, async (rawPayload, ack) => {

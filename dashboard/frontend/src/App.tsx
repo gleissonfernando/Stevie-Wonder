@@ -2,6 +2,7 @@ import {
   Bell,
   Bot,
   CheckCircle2,
+  Activity,
   Hash,
   LayoutDashboard,
   Loader2,
@@ -15,14 +16,19 @@ import {
   Save,
   Server,
   Settings,
+  Shield,
   Trash2,
   Twitch,
+  Users,
+  Wifi,
+  WifiOff,
   X
 } from "lucide-react";
 import type { ReactNode } from "react";
 import { useEffect, useMemo, useState } from "react";
+import { io, type Socket } from "socket.io-client";
 
-type Page = "home" | "alerts" | "subs" | "channels" | "settings";
+type Page = "home" | "alerts" | "social" | "subs" | "channels" | "logs" | "settings";
 
 type AuthUser = {
   id: string;
@@ -37,6 +43,58 @@ type Guild = {
   owner?: boolean;
 };
 
+type GuildOverview = {
+  guild: {
+    id: string;
+    name: string;
+    icon?: string | null;
+    memberCount: number;
+    onlineCount: number;
+    botCount: number;
+    newMemberCount: number;
+    leaveCount: number;
+    botOnline: boolean;
+    lastStatsAt?: string | null;
+  } | null;
+  counters: {
+    twitchChannels: number;
+    activeTwitchChannels: number;
+    socialNotifications: number;
+    activeSubs: number;
+  };
+  logs: DashboardLog[];
+};
+
+type DashboardLog = {
+  id: string;
+  guildId: string;
+  type: string;
+  action: string;
+  message: string;
+  userId?: string | null;
+  targetId?: string | null;
+  createdAt: string;
+};
+
+type SocialPlatform = "TWITCH" | "YOUTUBE" | "TIKTOK" | "KICK";
+
+type SocialConfig = {
+  id?: string;
+  guildId: string;
+  platform: SocialPlatform;
+  enabled: boolean;
+  channelId: string;
+  mentionRoleId: string;
+  customMessage: string;
+  embedTitle: string;
+  embedDescription: string;
+  embedColor: string;
+  thumbnailUrl: string;
+  buttonLabel: string;
+  buttonUrl: string;
+  updatedAt?: string;
+};
+
 type TextChannel = {
   id: string;
   name: string;
@@ -49,7 +107,13 @@ type LiveAlert = {
   streamerName: string;
   twitchAvatarUrl?: string | null;
   textChannelId: string;
+  mentionRoleId?: string | null;
   customMessage: string;
+  embedTitle?: string | null;
+  embedDescription?: string | null;
+  embedColor?: string | null;
+  thumbnailUrl?: string | null;
+  buttonLabel?: string | null;
   enabled: boolean;
   createdAt: string;
   updatedAt: string;
@@ -59,7 +123,13 @@ type AlertForm = {
   id?: string;
   streamerUrl: string;
   textChannelId: string;
+  mentionRoleId: string;
   customMessage: string;
+  embedTitle: string;
+  embedDescription: string;
+  embedColor: string;
+  thumbnailUrl: string;
+  buttonLabel: string;
   enabled: boolean;
 };
 
@@ -99,7 +169,45 @@ const apiPath = (path: string) => `${apiBase}${path}`;
 const authPath = (path: string) => apiPath(`/api/auth${path}`);
 const sessionStorageKey = "live_alerts_session";
 
-const defaultMessage = "@everyone";
+const defaultLiveUrl = import.meta.env.VITE_DEFAULT_TWITCH_ALERT_URL || "https://www.twitch.tv/ricardinn98";
+const defaultMessage = "@everyone {streamer} esta AO VIVO na Twitch!\n{url}";
+const defaultEmbedTitle = "{streamer} esta AO VIVO!";
+const defaultEmbedDescription = "**{title}**\n\nCategoria: {category}\nViewers: {viewers}\nCanal: {url}";
+const defaultEmbedColor = "#9146FF";
+const defaultButtonLabel = "Assistir agora";
+const socialPlatforms: SocialPlatform[] = ["TWITCH", "YOUTUBE", "TIKTOK", "KICK"];
+
+function defaultAlertForm(textChannelId = ""): AlertForm {
+  return {
+    streamerUrl: defaultLiveUrl,
+    textChannelId,
+    mentionRoleId: "",
+    customMessage: defaultMessage,
+    embedTitle: defaultEmbedTitle,
+    embedDescription: defaultEmbedDescription,
+    embedColor: defaultEmbedColor,
+    thumbnailUrl: "",
+    buttonLabel: defaultButtonLabel,
+    enabled: true
+  };
+}
+
+function emptySocialConfig(guildId: string, platform: SocialPlatform): SocialConfig {
+  return {
+    guildId,
+    platform,
+    enabled: false,
+    channelId: "",
+    mentionRoleId: "",
+    customMessage: platform === "TWITCH" ? defaultMessage : `{platform} atualizado em {url}`,
+    embedTitle: platform === "TWITCH" ? defaultEmbedTitle : `${platform} Notification`,
+    embedDescription: platform === "TWITCH" ? defaultEmbedDescription : "",
+    embedColor: platform === "TWITCH" ? defaultEmbedColor : "#5865F2",
+    thumbnailUrl: "",
+    buttonLabel: platform === "TWITCH" ? defaultButtonLabel : "Acessar",
+    buttonUrl: ""
+  };
+}
 
 function readCookie(name: string) {
   return document.cookie
@@ -227,8 +335,10 @@ function Sidebar({
   const items = [
     { id: "home" as const, label: "Inicio", icon: LayoutDashboard },
     { id: "alerts" as const, label: "Alertas de Live", icon: RadioTower },
+    { id: "social" as const, label: "Social", icon: Bell },
     { id: "subs" as const, label: "Subs Twitch", icon: Twitch },
     { id: "channels" as const, label: "Canais", icon: Hash },
+    { id: "logs" as const, label: "Logs", icon: Activity },
     { id: "settings" as const, label: "Configuracoes", icon: Settings }
   ];
 
@@ -291,6 +401,7 @@ function Sidebar({
 function AlertModal({
   form,
   channels,
+  roles,
   saving,
   onChange,
   onClose,
@@ -298,11 +409,14 @@ function AlertModal({
 }: {
   form: AlertForm;
   channels: TextChannel[];
+  roles: DiscordRole[];
   saving: boolean;
   onChange: (form: AlertForm) => void;
   onClose: () => void;
   onSave: () => void;
 }) {
+  const roleOptions = roles.filter((role) => !role.managed);
+
   return (
     <div className="modal-layer" role="dialog" aria-modal="true">
       <section className="modal-card">
@@ -319,7 +433,7 @@ function AlertModal({
         <label className="field">
           <span>URL do canal da live</span>
           <input
-            placeholder="https://www.twitch.tv/usuario"
+            placeholder={defaultLiveUrl}
             value={form.streamerUrl}
             onChange={(event) => onChange({ ...form, streamerUrl: event.target.value })}
           />
@@ -341,6 +455,21 @@ function AlertModal({
         </label>
 
         <label className="field">
+          <span>Cargo para mencionar</span>
+          <select
+            value={form.mentionRoleId}
+            onChange={(event) => onChange({ ...form, mentionRoleId: event.target.value })}
+          >
+            <option value="">Sem cargo</option>
+            {roleOptions.map((role) => (
+              <option key={role.id} value={role.id}>
+                @{role.name}
+              </option>
+            ))}
+          </select>
+        </label>
+
+        <label className="field">
           <span>Mensagem personalizada do alerta</span>
           <textarea
             rows={5}
@@ -348,6 +477,55 @@ function AlertModal({
             onChange={(event) => onChange({ ...form, customMessage: event.target.value })}
           />
         </label>
+
+        <div className="modal-form-grid">
+          <label className="field">
+            <span>Titulo da embed</span>
+            <input
+              placeholder={defaultEmbedTitle}
+              value={form.embedTitle}
+              onChange={(event) => onChange({ ...form, embedTitle: event.target.value })}
+            />
+          </label>
+
+          <label className="field">
+            <span>Cor da embed</span>
+            <input
+              type="color"
+              value={form.embedColor || defaultEmbedColor}
+              onChange={(event) => onChange({ ...form, embedColor: event.target.value })}
+            />
+          </label>
+        </div>
+
+        <label className="field">
+          <span>Descricao da embed</span>
+          <textarea
+            rows={3}
+            placeholder={defaultEmbedDescription}
+            value={form.embedDescription}
+            onChange={(event) => onChange({ ...form, embedDescription: event.target.value })}
+          />
+        </label>
+
+        <div className="modal-form-grid">
+          <label className="field">
+            <span>Thumbnail</span>
+            <input
+              placeholder="https://..."
+              value={form.thumbnailUrl}
+              onChange={(event) => onChange({ ...form, thumbnailUrl: event.target.value })}
+            />
+          </label>
+
+          <label className="field">
+            <span>Botao da live</span>
+            <input
+              value={form.buttonLabel}
+              onChange={(event) => onChange({ ...form, buttonLabel: event.target.value })}
+            />
+          </label>
+        </div>
 
         <label className="toggle-row">
           <input
@@ -587,6 +765,174 @@ function TwitchSubsView({
   );
 }
 
+function SocialNotificationsView({
+  configs,
+  channels,
+  roles,
+  selectedPlatform,
+  draft,
+  saving,
+  onSelect,
+  onDraft,
+  onSave
+}: {
+  configs: SocialConfig[];
+  channels: TextChannel[];
+  roles: DiscordRole[];
+  selectedPlatform: SocialPlatform;
+  draft: SocialConfig;
+  saving: boolean;
+  onSelect: (platform: SocialPlatform) => void;
+  onDraft: (config: SocialConfig) => void;
+  onSave: () => void;
+}) {
+  const roleOptions = roles.filter((role) => !role.managed);
+  const platformConfig = (platform: SocialPlatform) => configs.find((config) => config.platform === platform);
+
+  return (
+    <section className="view-grid">
+      <div className="social-platform-grid">
+        {socialPlatforms.map((platform) => {
+          const config = platformConfig(platform);
+          const active = config?.enabled;
+
+          return (
+            <button
+              className={`social-platform-card ${selectedPlatform === platform ? "selected" : ""}`}
+              key={platform}
+              type="button"
+              onClick={() => onSelect(platform)}
+            >
+              <RadioTower size={20} />
+              <strong>{platform}</strong>
+              <span>{active ? "Ativo" : "Inativo"}</span>
+            </button>
+          );
+        })}
+      </div>
+
+      <section className="panel-card">
+        <div className="panel-header">
+          <div>
+            <p className="eyebrow">Social Notifications</p>
+            <h2>{selectedPlatform}</h2>
+          </div>
+          <span className={`status-dot ${draft.enabled ? "ok" : ""}`}>
+            {draft.enabled ? "Sincronizado" : "Desativado"}
+          </span>
+        </div>
+
+        <div className="form-grid">
+          <label className="field compact-field">
+            <span>Canal de envio</span>
+            <select value={draft.channelId} onChange={(event) => onDraft({ ...draft, channelId: event.target.value })}>
+              <option value="">Selecione um canal</option>
+              {channels.map((channel) => (
+                <option key={channel.id} value={channel.id}>
+                  #{channel.name}
+                </option>
+              ))}
+            </select>
+          </label>
+
+          <label className="field compact-field">
+            <span>Cargo para mencionar</span>
+            <select
+              value={draft.mentionRoleId}
+              onChange={(event) => onDraft({ ...draft, mentionRoleId: event.target.value })}
+            >
+              <option value="">Sem cargo</option>
+              {roleOptions.map((role) => (
+                <option key={role.id} value={role.id}>
+                  @{role.name}
+                </option>
+              ))}
+            </select>
+          </label>
+
+          <label className="field compact-field">
+            <span>Titulo da embed</span>
+            <input
+              value={draft.embedTitle}
+              onChange={(event) => onDraft({ ...draft, embedTitle: event.target.value })}
+            />
+          </label>
+
+          <label className="field compact-field">
+            <span>Cor da embed</span>
+            <input
+              type="color"
+              value={draft.embedColor || "#5865F2"}
+              onChange={(event) => onDraft({ ...draft, embedColor: event.target.value })}
+            />
+          </label>
+
+          <label className="field compact-field wide-field">
+            <span>Mensagem personalizada</span>
+            <textarea
+              rows={4}
+              value={draft.customMessage}
+              onChange={(event) => onDraft({ ...draft, customMessage: event.target.value })}
+            />
+          </label>
+
+          <label className="field compact-field wide-field">
+            <span>Descricao da embed</span>
+            <textarea
+              rows={4}
+              value={draft.embedDescription}
+              onChange={(event) => onDraft({ ...draft, embedDescription: event.target.value })}
+            />
+          </label>
+
+          <label className="field compact-field">
+            <span>Thumbnail</span>
+            <input
+              placeholder="https://..."
+              value={draft.thumbnailUrl}
+              onChange={(event) => onDraft({ ...draft, thumbnailUrl: event.target.value })}
+            />
+          </label>
+
+          <label className="field compact-field">
+            <span>URL do botao</span>
+            <input
+              placeholder="https://..."
+              value={draft.buttonUrl}
+              onChange={(event) => onDraft({ ...draft, buttonUrl: event.target.value })}
+            />
+          </label>
+
+          <label className="field compact-field">
+            <span>Texto do botao</span>
+            <input
+              value={draft.buttonLabel}
+              onChange={(event) => onDraft({ ...draft, buttonLabel: event.target.value })}
+            />
+          </label>
+
+          <label className="toggle-row inline-toggle">
+            <input
+              type="checkbox"
+              checked={draft.enabled}
+              onChange={(event) => onDraft({ ...draft, enabled: event.target.checked })}
+            />
+            <span>Ativar notificacao</span>
+          </label>
+        </div>
+
+        <div className="panel-footer">
+          <span className="muted-cell">Salvar emite Dashboard, Banco, Socket e Bot.</span>
+          <button className="primary-button" type="button" onClick={onSave} disabled={saving || !draft.channelId}>
+            {saving ? <Loader2 className="spin" size={18} /> : <Save size={18} />}
+            Salvar
+          </button>
+        </div>
+      </section>
+    </section>
+  );
+}
+
 export default function App() {
   const [user, setUser] = useState<AuthUser | null>(null);
   const [guilds, setGuilds] = useState<Guild[]>([]);
@@ -594,6 +940,14 @@ export default function App() {
   const [channels, setChannels] = useState<TextChannel[]>([]);
   const [alerts, setAlerts] = useState<LiveAlert[]>([]);
   const [roles, setRoles] = useState<DiscordRole[]>([]);
+  const [overview, setOverview] = useState<GuildOverview | null>(null);
+  const [dashboardLogs, setDashboardLogs] = useState<DashboardLog[]>([]);
+  const [socialConfigs, setSocialConfigs] = useState<SocialConfig[]>([]);
+  const [selectedSocialPlatform, setSelectedSocialPlatform] = useState<SocialPlatform>("TWITCH");
+  const [socialDraft, setSocialDraft] = useState<SocialConfig>(emptySocialConfig("", "TWITCH"));
+  const [botOnline, setBotOnline] = useState(false);
+  const [socketConnected, setSocketConnected] = useState(false);
+  const [socket, setSocket] = useState<Socket | null>(null);
   const [subConfig, setSubConfig] = useState<TwitchSubConfig>({
     guildId: "",
     broadcasterLogin: "",
@@ -612,12 +966,7 @@ export default function App() {
   const [saving, setSaving] = useState(false);
   const [mobileOpen, setMobileOpen] = useState(false);
   const [modalOpen, setModalOpen] = useState(false);
-  const [form, setForm] = useState<AlertForm>({
-    streamerUrl: "",
-    textChannelId: "",
-    customMessage: defaultMessage,
-    enabled: true
-  });
+  const [form, setForm] = useState<AlertForm>(defaultAlertForm());
   const [message, setMessage] = useState("");
   const [error, setError] = useState("");
 
@@ -627,6 +976,8 @@ export default function App() {
   );
 
   const activeAlerts = useMemo(() => alerts.filter((alert) => alert.enabled).length, [alerts]);
+  const memberStats = overview?.guild;
+  const latestLogs = dashboardLogs.length ? dashboardLogs : overview?.logs || [];
 
   async function loadSession() {
     setLoading(true);
@@ -656,18 +1007,37 @@ export default function App() {
     if (!guildId) {
       setChannels([]);
       setAlerts([]);
+      setOverview(null);
+      setDashboardLogs([]);
+      setSocialConfigs([]);
+      setSocialDraft(emptySocialConfig("", selectedSocialPlatform));
       return;
     }
 
     setError("");
 
     try {
-      const [channelData, alertData] = await Promise.all([
+      const [channelData, alertData, overviewData, socialData, logData] = await Promise.all([
         apiJson<{ channels: TextChannel[] }>(`/api/lives/guilds/${guildId}/channels`, { cache: "no-store" }),
-        apiJson<{ alerts: LiveAlert[] }>(`/api/lives?guildId=${guildId}`, { cache: "no-store" })
+        apiJson<{ alerts: LiveAlert[] }>(`/api/lives?guildId=${guildId}`, { cache: "no-store" }),
+        apiJson<GuildOverview>(`/api/dashboard/guilds/${guildId}/overview`, { cache: "no-store" }),
+        apiJson<{ configs: SocialConfig[] }>(`/api/dashboard/guilds/${guildId}/social-notifications`, {
+          cache: "no-store"
+        }),
+        apiJson<{ logs: DashboardLog[] }>(`/api/dashboard/guilds/${guildId}/logs`, { cache: "no-store" })
       ]);
       setChannels(channelData.channels);
       setAlerts(alertData.alerts);
+      setOverview(overviewData);
+      setDashboardLogs(logData.logs || overviewData.logs || []);
+      const mergedConfigs = socialPlatforms.map(
+        (platform) => socialData.configs.find((config) => config.platform === platform) || emptySocialConfig(guildId, platform)
+      );
+      setSocialConfigs(mergedConfigs);
+      setSocialDraft(
+        mergedConfigs.find((config) => config.platform === selectedSocialPlatform) ||
+          emptySocialConfig(guildId, selectedSocialPlatform)
+      );
       await loadSubConfig(guildId);
     } catch (err) {
       setError(err instanceof Error ? err.message : "Nao foi possivel carregar o servidor.");
@@ -713,22 +1083,118 @@ export default function App() {
     }
   }, [selectedGuildId, user]);
 
-  function openCreateModal() {
-    setForm({
-      streamerUrl: "",
-      textChannelId: channels[0]?.id || "",
-      customMessage: defaultMessage,
-      enabled: true
+  useEffect(() => {
+    if (!user) {
+      socket?.disconnect();
+      setSocket(null);
+      setSocketConnected(false);
+      setBotOnline(false);
+      return;
+    }
+
+    const nextSocket = io(apiBase || window.location.origin, {
+      auth: { token: storedSessionToken() },
+      withCredentials: true,
+      transports: ["websocket", "polling"]
     });
+
+    nextSocket.on("connect", () => setSocketConnected(true));
+    nextSocket.on("disconnect", () => setSocketConnected(false));
+    nextSocket.on("bot:statusUpdate", (payload) => setBotOnline(Boolean(payload?.online)));
+    nextSocket.on("guild:overview", (payload) => {
+      if (payload?.guildId !== selectedGuildId) return;
+      setOverview(payload.overview || null);
+      if (payload.overview?.logs) setDashboardLogs(payload.overview.logs);
+    });
+    nextSocket.on("guild:stats", (payload) => {
+      if (payload?.guildId !== selectedGuildId) return;
+      setOverview((current) => ({
+        guild: payload.stats,
+        counters: current?.counters || {
+          twitchChannels: alerts.length,
+          activeTwitchChannels: activeAlerts,
+          socialNotifications: socialConfigs.length,
+          activeSubs: subStats.filter((item) => item.active).reduce((total, item) => total + item._count._all, 0)
+        },
+        logs: current?.logs || []
+      }));
+    });
+    nextSocket.on("guild:log", (payload) => {
+      if (payload?.guildId !== selectedGuildId || !payload.log) return;
+      setDashboardLogs((current) => [payload.log, ...current.filter((log) => log.id !== payload.log.id)].slice(0, 80));
+    });
+    nextSocket.on("social:notification.updated", (payload) => {
+      if (payload?.guildId !== selectedGuildId || !payload.config) return;
+      setSocialConfigs((current) =>
+        socialPlatforms.map((platform) =>
+          payload.config.platform === platform
+            ? payload.config
+            : current.find((config) => config.platform === platform) || emptySocialConfig(selectedGuildId, platform)
+        )
+      );
+      if (payload.config.platform === selectedSocialPlatform) setSocialDraft(payload.config);
+    });
+    nextSocket.on("twitch:channel.created", (payload) => {
+      if (payload?.guildId !== selectedGuildId || !payload.alert) return;
+      setAlerts((current) => [payload.alert, ...current.filter((alert) => alert.id !== payload.alert.id)]);
+    });
+    nextSocket.on("twitch:channel.updated", (payload) => {
+      if (payload?.guildId !== selectedGuildId || !payload.alert) return;
+      setAlerts((current) => current.map((alert) => (alert.id === payload.alert.id ? payload.alert : alert)));
+    });
+    nextSocket.on("twitch:channel.toggled", (payload) => {
+      if (payload?.guildId !== selectedGuildId || !payload.alert) return;
+      setAlerts((current) => current.map((alert) => (alert.id === payload.alert.id ? payload.alert : alert)));
+    });
+    nextSocket.on("twitch:channel.deleted", (payload) => {
+      if (payload?.guildId !== selectedGuildId || !payload.alert) return;
+      setAlerts((current) => current.filter((alert) => alert.id !== payload.alert.id));
+    });
+    nextSocket.on("twitch:sub.config.updated", (payload) => {
+      if (payload?.guildId !== selectedGuildId || !payload.config) return;
+      setSubConfig(payload.config);
+    });
+    nextSocket.on("twitch:sub.log", (payload) => {
+      if (payload?.guildId !== selectedGuildId || !payload.log) return;
+      setSubLogs((current) => [payload.log, ...current.filter((log) => log.id !== payload.log.id)].slice(0, 30));
+    });
+
+    setSocket(nextSocket);
+
+    return () => {
+      nextSocket.disconnect();
+    };
+  }, [user?.id, selectedGuildId]);
+
+  useEffect(() => {
+    if (!socket || !selectedGuildId) return;
+    socket.emit("dashboard:joinGuild", { guildId: selectedGuildId });
+  }, [socket, selectedGuildId]);
+
+  useEffect(() => {
+    setSocialDraft(
+      socialConfigs.find((config) => config.platform === selectedSocialPlatform) ||
+        emptySocialConfig(selectedGuildId, selectedSocialPlatform)
+    );
+  }, [selectedSocialPlatform, socialConfigs, selectedGuildId]);
+
+  function openCreateModal() {
+    setForm(defaultAlertForm(channels[0]?.id || ""));
     setModalOpen(true);
   }
 
   function openEditModal(alert: LiveAlert) {
     setForm({
       id: alert.id,
-      streamerUrl: alert.streamerUrl,
+      streamerUrl: alert.streamerUrl || defaultLiveUrl,
       textChannelId: alert.textChannelId,
-      customMessage: alert.customMessage,
+      mentionRoleId: alert.mentionRoleId || "",
+      customMessage: alert.customMessage || defaultMessage,
+      embedTitle: alert.embedTitle || defaultEmbedTitle,
+      embedDescription: alert.embedDescription || defaultEmbedDescription,
+      embedColor: alert.embedColor || defaultEmbedColor,
+      thumbnailUrl: alert.thumbnailUrl || "",
+      buttonLabel: alert.buttonLabel || defaultButtonLabel,
       enabled: alert.enabled
     });
     setModalOpen(true);
@@ -749,7 +1215,13 @@ export default function App() {
         guildId: selectedGuildId,
         streamerUrl: form.streamerUrl,
         textChannelId: form.textChannelId,
+        mentionRoleId: form.mentionRoleId,
         customMessage: form.customMessage,
+        embedTitle: form.embedTitle,
+        embedDescription: form.embedDescription,
+        embedColor: form.embedColor,
+        thumbnailUrl: form.thumbnailUrl,
+        buttonLabel: form.buttonLabel,
         enabled: form.enabled
       });
       const path = form.id ? `/api/lives/twitch/${form.id}` : "/api/lives/twitch";
@@ -823,6 +1295,41 @@ export default function App() {
     }
   }
 
+  async function saveSocialConfig() {
+    if (!selectedGuildId) {
+      setError("Selecione um servidor para configurar notificacoes sociais.");
+      return;
+    }
+
+    setSaving(true);
+    setError("");
+    setMessage("");
+
+    try {
+      const data = await apiJson<{ config: SocialConfig }>(
+        `/api/dashboard/guilds/${selectedGuildId}/social-notifications/${selectedSocialPlatform}`,
+        {
+          method: "PUT",
+          body: JSON.stringify(socialDraft)
+        }
+      );
+
+      setSocialConfigs((current) =>
+        socialPlatforms.map((platform) =>
+          data.config.platform === platform
+            ? data.config
+            : current.find((config) => config.platform === platform) || emptySocialConfig(selectedGuildId, platform)
+        )
+      );
+      setSocialDraft(data.config);
+      setMessage(`${selectedSocialPlatform} sincronizado com sucesso.`);
+    } catch (err) {
+      setError(err instanceof Error ? err.message : "Nao foi possivel salvar a notificacao social.");
+    } finally {
+      setSaving(false);
+    }
+  }
+
   async function logout() {
     const storedSession = storedSessionToken();
     await fetch(authPath("/logout"), {
@@ -874,10 +1381,28 @@ export default function App() {
             </div>
             <div>
             <p className="eyebrow">Dashboard</p>
-            <h1>{page === "alerts" ? "Alertas de Live" : page === "subs" ? "Subs Twitch" : "Painel de Controle"}</h1>
+            <h1>
+              {page === "alerts"
+                ? "Alertas de Live"
+                : page === "social"
+                  ? "Social Notifications"
+                  : page === "subs"
+                    ? "Subs Twitch"
+                    : page === "logs"
+                      ? "Logs em Tempo Real"
+                      : "Painel de Controle"}
+            </h1>
             </div>
           </div>
           <div className="topbar-right">
+            <span className={`connection-pill ${socketConnected ? "online" : ""}`}>
+              {socketConnected ? <Wifi size={14} /> : <WifiOff size={14} />}
+              Socket
+            </span>
+            <span className={`connection-pill ${botOnline ? "online" : ""}`}>
+              <Bot size={14} />
+              Bot
+            </span>
             <button className="icon-button notification-button" type="button" aria-label="Notificacoes">
               <Bell size={18} />
               <span />
@@ -921,24 +1446,44 @@ export default function App() {
 
               <section className="stats-grid">
                 <article className="stat-card">
-                  <RadioTower size={22} />
-                  <span>Alertas cadastrados</span>
-                  <strong>{alerts.length}</strong>
+                  <Users size={22} />
+                  <span>Total de membros</span>
+                  <strong>{memberStats?.memberCount ?? 0}</strong>
                 </article>
                 <article className="stat-card">
-                  <CheckCircle2 size={22} />
-                  <span>Alertas ativos</span>
-                  <strong>{activeAlerts}</strong>
+                  <Activity size={22} />
+                  <span>Online</span>
+                  <strong>{memberStats?.onlineCount ?? 0}</strong>
+                </article>
+                <article className="stat-card">
+                  <Bot size={22} />
+                  <span>Bots</span>
+                  <strong>{memberStats?.botCount ?? 0}</strong>
+                </article>
+                <article className="stat-card">
+                  <Shield size={22} />
+                  <span>Novos / Saidas</span>
+                  <strong>{memberStats?.newMemberCount ?? 0}/{memberStats?.leaveCount ?? 0}</strong>
+                </article>
+                <article className="stat-card">
+                  <RadioTower size={22} />
+                  <span>Alertas Twitch ativos</span>
+                  <strong>{overview?.counters.activeTwitchChannels ?? activeAlerts}</strong>
+                </article>
+                <article className="stat-card">
+                  <Bell size={22} />
+                  <span>Notificacoes sociais</span>
+                  <strong>{overview?.counters.socialNotifications ?? socialConfigs.filter((config) => config.enabled).length}</strong>
+                </article>
+                <article className="stat-card">
+                  <Twitch size={22} />
+                  <span>Subs Twitch ativos</span>
+                  <strong>{overview?.counters.activeSubs ?? subStats.filter((item) => item.active).reduce((total, item) => total + item._count._all, 0)}</strong>
                 </article>
                 <article className="stat-card">
                   <Server size={22} />
                   <span>Servidores admin</span>
                   <strong>{guilds.length}</strong>
-                </article>
-                <article className="stat-card">
-                  <Twitch size={22} />
-                  <span>Subs Twitch ativos</span>
-                  <strong>{subStats.filter((item) => item.active).reduce((total, item) => total + item._count._all, 0)}</strong>
                 </article>
               </section>
 
@@ -958,6 +1503,14 @@ export default function App() {
                   action="Configurar"
                   badge={`${subStats.filter((item) => item.active).reduce((total, item) => total + item._count._all, 0)} ativo(s)`}
                   onClick={() => setPage("subs")}
+                />
+                <ConfigCard
+                  icon={Bell}
+                  title="Social Notifications"
+                  description="Controle mensagens, embeds, cargos e botoes para Twitch, YouTube, TikTok e Kick."
+                  action="Abrir"
+                  badge={`${socialConfigs.filter((config) => config.enabled).length} ativo(s)`}
+                  onClick={() => setPage("social")}
                 />
               </CategorySection>
 
@@ -994,8 +1547,8 @@ export default function App() {
                   title="Logs e auditoria"
                   description="Historico de vinculos, sincronizacoes, erros e ações importantes do sistema."
                   action="Abrir"
-                  badge={`${subLogs.length} log(s)`}
-                  onClick={() => setPage("subs")}
+                  badge={`${latestLogs.length} log(s)`}
+                  onClick={() => setPage("logs")}
                 />
               </CategorySection>
             </>
@@ -1051,6 +1604,53 @@ export default function App() {
                     <Twitch size={28} />
                     <strong>Nenhum canal cadastrado</strong>
                     <span>Adicione um canal da Twitch para o bot enviar o alerta quando a live comecar.</span>
+                  </div>
+                )}
+              </div>
+            </section>
+          ) : null}
+
+          {page === "social" ? (
+            <SocialNotificationsView
+              configs={socialConfigs}
+              channels={channels}
+              roles={roles}
+              selectedPlatform={selectedSocialPlatform}
+              draft={socialDraft}
+              saving={saving}
+              onSelect={setSelectedSocialPlatform}
+              onDraft={setSocialDraft}
+              onSave={saveSocialConfig}
+            />
+          ) : null}
+
+          {page === "logs" ? (
+            <section className="panel-card">
+              <div className="panel-header">
+                <div>
+                  <p className="eyebrow">Logs</p>
+                  <h2>Eventos sincronizados</h2>
+                </div>
+                <span className={`connection-pill ${socketConnected ? "online" : ""}`}>
+                  {socketConnected ? <Wifi size={14} /> : <WifiOff size={14} />}
+                  Tempo real
+                </span>
+              </div>
+
+              <div className="log-list">
+                {latestLogs.length ? (
+                  latestLogs.map((log) => (
+                    <article className="log-row" key={log.id}>
+                      <strong>{log.action}</strong>
+                      <span>{log.message}</span>
+                      <small>{formatDate(log.createdAt)}</small>
+                    </article>
+                  ))
+                ) : (
+                  <div className="empty-state">
+                    <Activity size={28} />
+                    <strong>Nenhum log ainda</strong>
+                    <span>Entradas, saidas, banimentos, cargos e configuracoes aparecem aqui em tempo real.</span>
                   </div>
                 )}
               </div>
@@ -1114,6 +1714,7 @@ export default function App() {
         <AlertModal
           form={form}
           channels={channels}
+          roles={roles}
           saving={saving}
           onChange={setForm}
           onClose={() => setModalOpen(false)}

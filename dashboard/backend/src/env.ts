@@ -1,7 +1,6 @@
 import "dotenv/config";
 
 const siteUrl = (process.env.SITE_URL || "http://localhost:3001").replace(/\/+$/, "");
-const dashboardAuthorizedUserIds = ["1426287249020158018"];
 
 export const env = {
   port: Number(process.env.PORT || process.env.API_PORT || (process.env.NODE_ENV === "production" ? 80 : 4000)),
@@ -10,7 +9,8 @@ export const env = {
   discordToken: process.env.DISCORD_BOT_TOKEN || process.env.DISCORD_TOKEN || "",
   clientId: process.env.CLIENT_ID || "",
   clientSecret: process.env.DISCORD_CLIENT_SECRET || "",
-  discordOauthScopes: process.env.DISCORD_OAUTH_SCOPES || "identify guilds",
+  discordOauthScopes:
+    process.env.DISCORD_OAUTH_SCOPES || "identify email guilds guilds.members.read connections",
   redirectUri: process.env.DISCORD_REDIRECT_URI || `${siteUrl}/api/auth/discord/callback`,
   guildId: process.env.GUILD_ID || "",
   requireGuildMember: process.env.REQUIRE_GUILD_MEMBER === "true",
@@ -33,7 +33,6 @@ export const env = {
   publicSiteUrl: process.env.NEXT_PUBLIC_SITE_URL || process.env.SITE_URL || "http://localhost:3001",
   authorizedUserIds: Array.from(
     new Set([
-      ...dashboardAuthorizedUserIds,
       ...(process.env.AUTHORIZED_USER_IDS || process.env.OWNER_IDS || "")
         .split(",")
         .map((id) => id.trim())

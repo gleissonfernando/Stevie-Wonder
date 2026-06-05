@@ -5,6 +5,7 @@ type DiscordUser = {
   username: string;
   global_name?: string | null;
   avatar?: string | null;
+  email?: string | null;
 };
 
 export type DiscordUserGuild = {

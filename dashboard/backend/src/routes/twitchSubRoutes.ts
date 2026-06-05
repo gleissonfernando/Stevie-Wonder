@@ -21,6 +21,10 @@ import {
   refreshTwitchUserToken,
   twitchOAuthUrl
 } from "../services/twitch";
+import { recordGuildLog, serializeGuildLog } from "../services/dashboardData";
+import { emitBotEvent, emitGuildEvent } from "../socket/dashboardSocket";
+import { connectMongo } from "../services/mongo";
+import { TwitchSubscriber } from "../models/dashboardRealtime";
 
 export const twitchSubRoutes = Router();
 
@@ -104,7 +108,7 @@ async function logSubAction(
   message: string,
   options: { discordUserId?: string; twitchUserId?: string; metadata?: unknown } = {}
 ) {
-  await prisma.twitchSubSyncLog.create({
+  const syncLog = await prisma.twitchSubSyncLog.create({
     data: {
       guildId,
       action,
@@ -114,6 +118,19 @@ async function logSubAction(
       metadata: options.metadata as any
     }
   });
+
+  const dashboardLog = await recordGuildLog({
+    guildId,
+    type: "twitch_sub",
+    action,
+    message,
+    userId: options.discordUserId || null,
+    targetId: options.twitchUserId || null,
+    metadata: options.metadata || null
+  });
+
+  emitGuildEvent(guildId, "twitch:sub.log", { log: syncLog });
+  emitGuildEvent(guildId, "guild:log", { log: serializeGuildLog(dashboardLog) });
 
   const config = await prisma.twitchSubConfig.findUnique({ where: { guildId } });
   if (!config?.logChannelId) return;
@@ -189,6 +206,24 @@ export async function syncTwitchSubAccount(accountId: string) {
       }
     });
 
+    await connectMongo();
+    await TwitchSubscriber.updateOne(
+      { guildId: account.guildId, discordUserId: account.discordUserId },
+      {
+        $set: {
+          twitchUserId: account.twitchUserId,
+          twitchLogin: account.twitchLogin,
+          isSubscriber: false,
+          activeRoleIds: [],
+          lastCheckedAt: new Date()
+        },
+        $setOnInsert: {
+          guildId: account.guildId,
+          discordUserId: account.discordUserId
+        }
+      }
+    );
+
     if (account.active) {
       await logSubAction(account.guildId, "sub_lost", `❌ <@${account.discordUserId}> perdeu a inscrição Twitch. Cargo removido.`, {
         discordUserId: account.discordUserId,
@@ -216,6 +251,24 @@ export async function syncTwitchSubAccount(accountId: string) {
       lastSubscribedAt: new Date()
     }
   });
+
+  await connectMongo();
+  await TwitchSubscriber.updateOne(
+    { guildId: account.guildId, discordUserId: account.discordUserId },
+    {
+      $set: {
+        twitchUserId: account.twitchUserId,
+        twitchLogin: account.twitchLogin,
+        isSubscriber: true,
+        activeRoleIds: [nextRoleId],
+        lastCheckedAt: new Date()
+      },
+      $setOnInsert: {
+      guildId: account.guildId,
+      discordUserId: account.discordUserId
+      }
+    }
+  );
 
   await logSubAction(
     account.guildId,
@@ -453,7 +506,15 @@ twitchSubRoutes.put("/config", requireAuth, async (request, response, next) => {
       }
     });
 
-    response.json({ config: serializeConfig(config) });
+    const serialized = serializeConfig(config);
+    await logSubAction(payload.guildId, "config_updated", "Configuracao Twitch Subscriber atualizada pelo dashboard.", {
+      discordUserId: request.user!.id,
+      metadata: serialized
+    });
+    emitGuildEvent(payload.guildId, "twitch:sub.config.updated", { config: serialized });
+    emitBotEvent("dashboard:twitchSubConfigChanged", { guildId: payload.guildId, config: serialized });
+
+    response.json({ config: serialized });
   } catch (error) {
     next(error);
   }

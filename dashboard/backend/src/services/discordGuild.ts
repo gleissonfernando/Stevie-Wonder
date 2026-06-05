@@ -114,9 +114,11 @@ export async function assertCanManageLives(userId: string, guildId = env.guildId
   const [guild, member] = await Promise.all([fetchGuild(guildId), fetchGuildMember(userId, guildId)]);
   const permissionBits = BigInt(member.permissions || "0");
   const isOwner = guild.owner_id === userId;
-  const isAdmin = (permissionBits & PermissionFlagsBits.Administrator) === PermissionFlagsBits.Administrator;
+  const canManageGuild =
+    (permissionBits & PermissionFlagsBits.Administrator) === PermissionFlagsBits.Administrator ||
+    (permissionBits & PermissionFlagsBits.ManageGuild) === PermissionFlagsBits.ManageGuild;
 
-  if (!isOwner && !isAdmin) {
+  if (!isOwner && !canManageGuild) {
     throw new Error("Voce nao possui permissao para acessar as lives deste servidor.");
   }
 
@@ -129,14 +131,23 @@ export function hasAdministratorPermission(permissions?: string, owner?: boolean
   return (permissionBits & PermissionFlagsBits.Administrator) === PermissionFlagsBits.Administrator;
 }
 
+export function hasGuildManagementPermission(permissions?: string, owner?: boolean) {
+  if (owner) return true;
+  const permissionBits = BigInt(permissions || "0");
+  return (
+    (permissionBits & PermissionFlagsBits.Administrator) === PermissionFlagsBits.Administrator ||
+    (permissionBits & PermissionFlagsBits.ManageGuild) === PermissionFlagsBits.ManageGuild
+  );
+}
+
 export async function assertCanManageGuild(userId: string, guildId: string) {
   if (env.authorizedUserIds.includes(userId)) return true;
 
   const [guild, member] = await Promise.all([fetchGuild(guildId), fetchGuildMember(userId, guildId)]);
   const isOwner = guild.owner_id === userId;
 
-  if (!hasAdministratorPermission(member.permissions, isOwner)) {
-    throw new Error("Voce precisa ser administrador deste servidor para configurar alertas.");
+  if (!hasGuildManagementPermission(member.permissions, isOwner)) {
+    throw new Error("Voce precisa ter Administrator ou Manage Guild neste servidor para configurar alertas.");
   }
 
   return true;

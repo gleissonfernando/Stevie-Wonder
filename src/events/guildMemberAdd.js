@@ -2,6 +2,7 @@ const fs = require("node:fs");
 const { ActionRowBuilder, AttachmentBuilder, ButtonBuilder, ButtonStyle, Events, MessageFlags, PermissionsBitField } = require("discord.js");
 const welcomeConfig = require("../config/welcome");
 const { sendAuditLog } = require("../services/discord/auditLogger");
+const { emitGuildStats } = require("../services/discord/dashboardSync");
 const { buildWelcomeComponents, isConfiguredGif } = require("../utils/welcomeComponents");
 const { buildTwitchSubLink } = require("../utils/twitchSubLink");
 const logger = require("../utils/logger");
@@ -93,11 +94,18 @@ module.exports = {
 
       await sendAuditLog(member.guild, {
         title: "Membro entrou",
+        action: "member_join",
+        counter: "member_join",
+        userId: member.id,
         color: 0x22c55e,
         fields: [
           { name: "Usuario", value: `${member.user.tag} (${member.id})` },
           { name: "Conta criada", value: `<t:${Math.floor(member.user.createdTimestamp / 1000)}:F>` }
         ]
+      });
+
+      emitGuildStats(member.guild).catch((error) => {
+        logger.warn(`Nao foi possivel atualizar stats do dashboard: ${error.message}`);
       });
 
       const channel = await resolveWelcomeChannel(member.guild, welcomeConfig);

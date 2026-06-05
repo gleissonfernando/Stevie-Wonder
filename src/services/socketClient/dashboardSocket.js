@@ -1,6 +1,7 @@
 const { io } = require("socket.io-client");
 const logger = require("../../utils/logger");
 const { handlers, logToConfiguredChannel } = require("../discord/dashboardActions");
+const { emitGuildStats } = require("../discord/dashboardSync");
 
 function startDashboardSocket(client) {
   const localPort = process.env.PORT || process.env.API_PORT || (process.env.NODE_ENV === "production" ? "80" : "4000");
@@ -16,6 +17,12 @@ function startDashboardSocket(client) {
   socket.on("connect", () => {
     logger.info(`Dashboard socket conectado (${socket.id}).`);
     socket.emit("bot:statusUpdate", { online: true, at: new Date().toISOString() });
+
+    for (const guild of client.guilds.cache.values()) {
+      emitGuildStats(guild).catch((error) => {
+        logger.warn(`Nao foi possivel emitir estatisticas para o dashboard: ${error.message}`);
+      });
+    }
   });
 
   socket.on("disconnect", (reason) => {
@@ -49,6 +56,36 @@ function startDashboardSocket(client) {
       }
     });
   }
+
+  socket.on("dashboard:socialNotificationChanged", (event) => {
+    logger.info(`Config social atualizada em tempo real: ${event?.guildId}/${event?.config?.platform}.`);
+    socket.emit("bot:statusUpdate", {
+      online: true,
+      lastConfigEvent: "socialNotificationChanged",
+      guildId: event?.guildId,
+      at: new Date().toISOString()
+    });
+  });
+
+  socket.on("dashboard:twitchChannelChanged", (event) => {
+    logger.info(`Canal Twitch sincronizado em tempo real: ${event?.guildId}/${event?.action}.`);
+    socket.emit("bot:statusUpdate", {
+      online: true,
+      lastConfigEvent: "twitchChannelChanged",
+      guildId: event?.guildId,
+      at: new Date().toISOString()
+    });
+  });
+
+  socket.on("dashboard:twitchSubConfigChanged", (event) => {
+    logger.info(`Config Twitch Subscriber sincronizada em tempo real: ${event?.guildId}.`);
+    socket.emit("bot:statusUpdate", {
+      online: true,
+      lastConfigEvent: "twitchSubConfigChanged",
+      guildId: event?.guildId,
+      at: new Date().toISOString()
+    });
+  });
 
   return socket;
 }
